@@ -46,11 +46,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -76,23 +76,25 @@ import it.daprile.keepapp.core.format.ActivityKind
 import it.daprile.keepapp.core.format.PhonePosition
 import it.daprile.keepapp.logger.audio.BluetoothLatencyCalibrator
 import it.daprile.keepapp.logger.audio.CalibrationResult
+import it.daprile.keepapp.logger.audio.Media3AndDuckingTestController
 import it.daprile.keepapp.logger.audio.SampleAccurateMetronome
 import it.daprile.keepapp.logger.data.DeviceInfoCollector
 import it.daprile.keepapp.logger.data.DeviceSnapshot
 import it.daprile.keepapp.logger.data.SessionFileWriter
+import it.daprile.keepapp.logger.data.XiaomiOnboardingHelper
 import it.daprile.keepapp.logger.service.LoggerForegroundService
 import java.io.File
 import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Activity principale di KeepApp Logger (Fase 0 – Milestone 3).
+ * Activity principale di KeepApp Logger (Fase 0 – Milestone 4).
  *
- * Offre 3 schede:
- * 1. "Sessione (F2–F4)": registrazione sensori 100Hz, GPS, microfono 48kHz, verifica A2DP e marker cuffie.
- * 2. "Metronomo & BT (F5/F6)": test metronomo sample-accurate (WRITE_BLOCKING, jitter, underrun)
- *    e calibrazione latenza Bluetooth ("Batti a tempo" 16 click vs "A contatto" 5 click).
- * 3. "Info Dispositivo (F1)": stato barometro, dispositivi audio e lista completa sensori.
+ * Offre 4 schede:
+ * 1. "Sessione (F2–F4)"
+ * 2. "Metronomo & BT (F5/F6)"
+ * 3. "Media3 & Xiaomi (F7–F9)"
+ * 4. "Dispositivo (F1)"
  */
 class MainActivity : ComponentActivity() {
 
@@ -172,23 +174,24 @@ fun KeepAppLoggerRoot() {
                     .padding(top = 12.dp)
             ) {
                 Text(
-                    text = "KeepApp Logger — Fase 0 (M3)",
+                    text = "KeepApp Logger — Fase 0 (M4)",
                     color = Color.White,
                     fontSize = 19.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
                 Text(
-                    text = "Sensori • Mic 48kHz A2DP • Marker • Metronomo F5 • Calibrazione BT F6",
+                    text = "F1–F6 • F7 Media3 + Sidechain EQ • F8 Ducking Spotify • F9 Xiaomi",
                     color = Color(0xFFB0BEC5),
                     fontSize = 11.sp,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                TabRow(
+                ScrollableTabRow(
                     selectedTabIndex = selectedTab,
                     containerColor = Color(0xFF102027),
-                    contentColor = Color.White
+                    contentColor = Color.White,
+                    edgePadding = 8.dp
                 ) {
                     Tab(
                         selected = selectedTab == 0,
@@ -202,11 +205,16 @@ fun KeepAppLoggerRoot() {
                     )
                     Tab(
                         selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        text = { Text("3. Media3 & Xiaomi (M4)", fontSize = 13.sp) }
+                    )
+                    Tab(
+                        selected = selectedTab == 3,
                         onClick = {
                             deviceSnapshot = DeviceInfoCollector.collectDeviceSnapshot(context)
-                            selectedTab = 2
+                            selectedTab = 3
                         },
-                        text = { Text("3. Dispositivo", fontSize = 13.sp) }
+                        text = { Text("4. Dispositivo", fontSize = 13.sp) }
                     )
                 }
             }
@@ -241,12 +249,324 @@ fun KeepAppLoggerRoot() {
             when (selectedTab) {
                 0 -> SessionRecordingScreen()
                 1 -> MetronomeAndCalibrationScreen()
-                2 -> DeviceInfoScreen(
+                2 -> Media3DuckingAndXiaomiScreen()
+                3 -> DeviceInfoScreen(
                     snapshot = deviceSnapshot,
                     onRefresh = {
                         deviceSnapshot = DeviceInfoCollector.collectDeviceSnapshot(context)
                     }
                 )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun Media3DuckingAndXiaomiScreen() {
+    val context = LocalContext.current
+    val controller = remember { Media3AndDuckingTestController(context) }
+    val state by controller.uiState.collectAsState()
+
+    var speedSlider by remember { mutableFloatStateOf(state.playbackSpeed) }
+    var xiaomiActionFeedback by remember { mutableStateOf("") }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            controller.releaseAll()
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // === SEZIONE F7: TEST MEDIA3 TIME-STRETCH + DYNAMICSPROCESSING ===
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = if (state.isMedia3Playing) Color(0xFFE8EAF6) else Color(0xFFF5F5F5)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = "🎚️ F7 — Test Media3 (Velocità 0,85x–1,15x) & Sidechain EQ",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = Color(0xFF1A237E)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Riproduce una traccia musicale sintetica a tonalità preservata (Sonic) e testa DynamicsProcessing (attenuazione 300 Hz – 3 kHz con rampa 200 ms).",
+                    fontSize = 12.sp,
+                    color = Color.DarkGray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = String.format(
+                        Locale.US,
+                        "Velocità: %.2fx (0,85 – 1,15)  |  Uso CPU processo: %.1f%%  |  sessionId: %d",
+                        speedSlider,
+                        state.processCpuPercent,
+                        state.audioSessionId
+                    ),
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+
+                Slider(
+                    value = speedSlider,
+                    onValueChange = {
+                        speedSlider = it
+                        controller.setPlaybackSpeed(it)
+                    },
+                    valueRange = 0.85f..1.15f
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(0.85f, 0.95f, 1.00f, 1.08f, 1.15f).forEach { preset ->
+                        OutlinedButton(
+                            onClick = {
+                                speedSlider = preset
+                                controller.setPlaybackSpeed(preset)
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(String.format(Locale.US, "%.2fx", preset), fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (!state.isMedia3Playing) {
+                    Button(
+                        onClick = { controller.startMedia3Test(speedSlider) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF283593)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("▶ AVVIA RIPRODUZIONE MEDIA3")
+                    }
+                } else {
+                    Button(
+                        onClick = { controller.stopMedia3Test() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("⏹ FERMA MEDIA3")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Valutazione qualità Time-Stretch Media3 (1–5):", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (star in 1..5) {
+                        FilterChip(
+                            selected = state.userQualityRating == star,
+                            onClick = { controller.recordMedia3QualityRating(star) },
+                            label = { Text("$star ★") }
+                        )
+                    }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+
+                // Sotto-sezione F7: Test Sidechain EQ DynamicsProcessing
+                Text(
+                    text = "Test DynamicsProcessing (Sidechain EQ 300 Hz – 3 kHz per 3 s):",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = "Stato: ${state.sidechainStatus}",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = if (state.sidechainStatus.startsWith("ERRORE") || state.sidechainStatus.startsWith("❌"))
+                        Color(0xFFC62828) else Color(0xFF1B5E20)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Button(
+                    onClick = { controller.triggerSidechainEqEnvelopeTest() },
+                    enabled = state.isMedia3Playing && !state.isSidechainActive,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (state.isSidechainActive) "⏳ SIDECHAIN EQ IN CORSO (3 s)..."
+                        else "🎚️ TESTA ATTENUAZIONE 300Hz–3kHz (3s + RAMPA 200ms)"
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Text("L'attenuazione della banda vocale è udibile?", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Udibile: SÌ (Chiaro)", "Udibile: SÌ (Leggero)", "Udibile: NO").forEach { opt ->
+                        FilterChip(
+                            selected = state.sidechainAudibleAnswer == opt,
+                            onClick = { controller.recordSidechainAudible(opt) },
+                            label = { Text(opt) }
+                        )
+                    }
+                }
+            }
+        }
+
+        // === SEZIONE F8: TEST DUCKING CON SPOTIFY ===
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = "🎧 F8 — Test Ducking Dinamico con Spotify",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = Color(0xFF1B5E20)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Avvia una canzone su Spotify, poi attiva il test: ogni 20 s l'app chiede AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK, pronuncia una frase di 3 s e rilascia il focus.",
+                    fontSize = 12.sp,
+                    color = Color.DarkGray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (state.isDuckingLoopActive)
+                                "Ciclo 20s ATTIVO (prossimo tra ${state.secondsToNextDuck} s)"
+                            else "Ciclo automatico ogni 20 s",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = "Interventi eseguiti: ${state.duckingCyclesCount} | ${state.lastFocusResult}",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Switch(
+                        checked = state.isDuckingLoopActive,
+                        onCheckedChange = { controller.toggleDuckingLoop20s(it) }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Button(
+                    onClick = { controller.triggerSingleDuckingPrompt() },
+                    enabled = !state.isSpeakingPromptNow,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (state.isSpeakingPromptNow) "🗣️ FRASE DI PROVA IN CORSO (3 s)..."
+                        else "🗣️ ESEGUI SUBITO FRASE DI PROVA (3 s) + DUCKING"
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Cosa ha fatto Spotify durante la frase di 3 s?", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        "Si è abbassato (Ducking OK)",
+                        "Si è messo in pausa",
+                        "Nessun effetto"
+                    ).forEach { behavior ->
+                        FilterChip(
+                            selected = state.spotifyObservedBehavior == behavior,
+                            onClick = { controller.recordSpotifyDuckingBehavior(behavior) },
+                            label = { Text(behavior) }
+                        )
+                    }
+                }
+            }
+        }
+
+        // === SEZIONE F9: ONBOARDING XIAOMI / HYPEROS ===
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = "🛡️ F9 — Configurazione Xiaomi / HyperOS (60+ min a schermo spento)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = Color(0xFFE65100)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Per evitare che HyperOS chiuda il servizio durante corse di 60 minuti a schermo spento, esegui questi 3 passaggi una sola volta:",
+                    fontSize = 12.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Passo 1: Attiva 'Avvio automatico in background' per KeepApp Logger.",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+                Button(
+                    onClick = {
+                        xiaomiActionFeedback = XiaomiOnboardingHelper.openXiaomiAutostartOrAppSettings(context)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF6C00)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("1️⃣ APRI GESTIONE AVVIO AUTOMATICO XIAOMI")
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Passo 2: Imposta il Risparmio Batteria su 'Nessuna restrizione'.",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+                Button(
+                    onClick = {
+                        xiaomiActionFeedback = XiaomiOnboardingHelper.openXiaomiBatterySaverForApp(context)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD84315)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("2️⃣ APRI RISPARMIO BATTERIA APP ('NESSUNA RESTRIZIONE')")
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Passo 3: Blocca l'app col 'Lucchetto' nei Recenti",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+                Text(
+                    text = "Apri la vista delle App Recenti (tasto quadrato in basso), tieni premuto per 1 secondo sulla scheda di KeepApp Logger e tocca l'icona del Lucchetto 🔒.",
+                    fontSize = 12.sp,
+                    color = Color.DarkGray
+                )
+
+                if (xiaomiActionFeedback.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Esito apertura: $xiaomiActionFeedback",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        color = Color(0xFF1B5E20)
+                    )
+                }
             }
         }
     }
@@ -278,7 +598,6 @@ fun MetronomeAndCalibrationScreen() {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // === SEZIONE F5: TEST METRONOMO SAMPLE-ACCURATE ===
         Card(
             colors = CardDefaults.cardColors(
                 containerColor = if (metroTelemetry.isRunning) Color(0xFFE3F2FD) else Color(0xFFF5F5F5)
@@ -371,7 +690,6 @@ fun MetronomeAndCalibrationScreen() {
             }
         }
 
-        // === SEZIONE F6: CALIBRAZIONE LATENZA BLUETOOTH ===
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8E1)),
             modifier = Modifier.fillMaxWidth()
@@ -394,7 +712,6 @@ fun MetronomeAndCalibrationScreen() {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // --- Metodo (a): Batti a tempo (16 click) ---
                 Text(
                     text = "Metodo (a): \"Batti a tempo\" (16 tocchi a 120 BPM)",
                     fontWeight = FontWeight.Bold,
@@ -442,7 +759,6 @@ fun MetronomeAndCalibrationScreen() {
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
 
-                // --- Metodo (b): A contatto (5 click sul microfono) ---
                 Text(
                     text = "Metodo (b): \"A contatto\" (5 impulsi cuffia → microfono)",
                     fontWeight = FontWeight.Bold,
@@ -475,7 +791,6 @@ fun MetronomeAndCalibrationScreen() {
                     CalibrationResultBadge(res)
                 }
 
-                // --- Confronto diretto se entrambi i metodi sono stati eseguiti ---
                 val tapRes = calState.tapResult
                 val contactRes = calState.contactResult
                 if (tapRes != null && contactRes != null) {
@@ -499,7 +814,6 @@ fun MetronomeAndCalibrationScreen() {
             }
         }
 
-        // Storico calibrazioni salvate per cuffia
         if (calState.savedProfiles.isNotEmpty()) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp)) {

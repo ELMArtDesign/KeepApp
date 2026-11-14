@@ -24,7 +24,7 @@ android {
         // è targetSdk = 36 (Android 16).
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0-phase0-m1"
+        versionName = "0.4.0-phase0-m4"
     }
 
     buildTypes {
@@ -61,6 +61,10 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+
+    // AndroidX Media3 / ExoPlayer (Apache 2.0) per F7 (velocità variabile e DynamicsProcessing)
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-common:1.4.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }
