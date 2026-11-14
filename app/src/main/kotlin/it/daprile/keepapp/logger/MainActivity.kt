@@ -47,6 +47,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -78,13 +79,7 @@ import java.io.File
 import java.util.Locale
 
 /**
- * Activity principale di KeepApp Logger (Fase 0 – Milestone 1).
- *
- * Offre due schede:
- * 1. "Sessione (F2/F3)": configurazione pre-sessione, avvio/arresto Foreground Service,
- *    telemetria in tempo reale, pulsante gigante MARKER e gestione/cancellazione sessioni salvate.
- * 2. "Info Dispositivo (F1)": stato barometro, dispositivi audio attivi, versione OS
- *    ed elenco completo dei sensori hardware con frequenza massima e wake-up.
+ * Activity principale di KeepApp Logger (Fase 0 – Milestone 2).
  */
 class MainActivity : ComponentActivity() {
 
@@ -109,11 +104,11 @@ fun KeepAppLoggerRoot() {
     var selectedTab by remember { mutableIntStateOf(0) }
     var deviceSnapshot by remember { mutableStateOf(DeviceInfoCollector.collectDeviceSnapshot(context)) }
 
-    // Richiesta permessi runtime all'apertura dell'app
     val permissionsToRequest = remember {
         buildList {
             add(Manifest.permission.ACCESS_FINE_LOCATION)
             add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            add(Manifest.permission.RECORD_AUDIO)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 add(Manifest.permission.ACTIVITY_RECOGNITION)
             }
@@ -128,17 +123,24 @@ fun KeepAppLoggerRoot() {
             ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
+            ) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.RECORD_AUDIO
+                    ) == PackageManager.PERMISSION_GRANTED
         )
     }
 
     val permLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { result ->
-        permissionsGranted = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+    ) {
+        permissionsGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED &&
                 ContextCompat.checkSelfPermission(
                     context,
-                    Manifest.permission.ACCESS_FINE_LOCATION
+                    Manifest.permission.RECORD_AUDIO
                 ) == PackageManager.PERMISSION_GRANTED
     }
 
@@ -153,20 +155,20 @@ fun KeepAppLoggerRoot() {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background( Color(0xFF102027) )
+                    .background(Color(0xFF102027))
                     .padding(top = 12.dp)
             ) {
                 Text(
-                    text = "KeepApp Logger — Fase 0 (M1)",
+                    text = "KeepApp Logger — Fase 0 (M2)",
                     color = Color.White,
                     fontSize = 19.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
                 Text(
-                    text = "Strumento interno • Zero rete • Solo memoria locale",
+                    text = "Sensori 100Hz • GPS • Mic BUILTIN 48kHz • Test A2DP & Marker Cuffie",
                     color = Color(0xFFB0BEC5),
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
                 )
                 Spacer(modifier = Modifier.height(6.dp))
@@ -178,7 +180,7 @@ fun KeepAppLoggerRoot() {
                     Tab(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        text = { Text("1. Sessione (F2/F3)") }
+                        text = { Text("1. Sessione (F2–F4)") }
                     )
                     Tab(
                         selected = selectedTab == 1,
@@ -206,17 +208,17 @@ fun KeepAppLoggerRoot() {
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
-                            text = "Permesso Posizione GPS e Attività Fisica richiesti",
+                            text = "Permesso Microfono e Posizione GPS richiesti per M2",
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFFE65100)
                         )
                         Text(
-                            text = "Premi il pulsante qui sotto per concedere i permessi necessari alla registrazione dei sensori e del GPS a schermo spento.",
+                            text = "Premi qui sotto per autorizzare la cattura dal microfono interno (48 kHz) e verificare che le cuffie restino in A2DP.",
                             fontSize = 13.sp
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(onClick = { permLauncher.launch(permissionsToRequest) }) {
-                            Text("Concedi Permessi")
+                            Text("Concedi Permessi (Incluso Microfono)")
                         }
                     }
                 }
@@ -245,12 +247,12 @@ fun SessionRecordingScreen() {
     var selectedPosition by remember { mutableStateOf(PhonePosition.ARM) }
     var selectedActivity by remember { mutableStateOf(ActivityKind.WALK) }
     var headphonesName by remember { mutableStateOf("Mankiw Bone Conduction") }
+    var enableMic by remember { mutableStateOf(true) }
 
     val sessionsRoot = remember { SessionFileWriter.getSessionsRootDir(context.filesDir) }
     var savedSessions by remember { mutableStateOf(listSavedSessions(sessionsRoot)) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
-    // Aggiorna la lista sessioni quando la registrazione inizia o finisce
     LaunchedEffect(runtimeState.isRecording) {
         savedSessions = listSavedSessions(sessionsRoot)
     }
@@ -262,7 +264,7 @@ fun SessionRecordingScreen() {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Pannello Stato in Tempo Reale
+        // Pannello Stato in Tempo Reale (Sensori + Audio A2DP + Marker)
         Card(
             colors = CardDefaults.cardColors(
                 containerColor = if (runtimeState.isRecording) Color(0xFFE8F5E9) else Color(0xFFF5F5F5)
@@ -271,10 +273,10 @@ fun SessionRecordingScreen() {
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text(
-                    text = if (runtimeState.isRecording) "🔴 REGISTRAZIONE ATTIVA (Puoi spegnere lo schermo)"
+                    text = if (runtimeState.isRecording) "🔴 REGISTRAZIONE M2 ATTIVA (Puoi spegnere lo schermo)"
                     else "⚪ PRONTO PER REGISTRARE",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
+                    fontSize = 15.sp,
                     color = if (runtimeState.isRecording) Color(0xFF1B5E20) else Color(0xFF424242)
                 )
                 if (runtimeState.sessionFolderName.isNotEmpty()) {
@@ -284,11 +286,11 @@ fun SessionRecordingScreen() {
                         fontFamily = FontFamily.Monospace
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = String.format(
                         Locale.US,
-                        "Durata: %02d:%02d  |  Record scritti: %d  |  Heartbeat: %d",
+                        "Durata: %02d:%02d  |  Record: %d  |  Heartbeat: %d",
                         runtimeState.elapsedSeconds / 60,
                         runtimeState.elapsedSeconds % 60,
                         runtimeState.recordsWritten,
@@ -305,44 +307,94 @@ fun SessionRecordingScreen() {
                         runtimeState.gyroHz,
                         runtimeState.magHz
                     ),
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
                 )
                 Text(
                     text = String.format(
                         Locale.US,
-                        "Passi (StepDetector): %d  |  Fix GPS: %d (vel: %.1f m/s, acc: %.1f m)",
+                        "Passi: %d  |  Fix GPS: %d (vel: %.1f m/s, acc: %.1f m)",
                         runtimeState.stepCount,
                         runtimeState.gpsFixCount,
                         runtimeState.lastGpsSpeedMps,
                         runtimeState.lastGpsAccuracyM
                     ),
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
+
+                // Sezione Audio M2: A2DP vs SCO + AUDIO_SYNC + Microfono
+                val btStatusText = when {
+                    runtimeState.isScoActive -> "⚠️ ATTENZIONE: BLUETOOTH SCO/HFP ATTIVO!"
+                    runtimeState.isA2dpActive -> "✅ CUFFIA IN BLUETOOTH A2DP (Alta qualità OK)"
+                    else -> "ℹ️ Nessuna cuffia A2DP rilevata (Altoparlante)"
+                }
+                val btStatusColor = when {
+                    runtimeState.isScoActive -> Color(0xFFC62828)
+                    runtimeState.isA2dpActive -> Color(0xFF1B5E20)
+                    else -> Color(0xFF455A64)
+                }
+
+                Text(
+                    text = btStatusText,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = btStatusColor
+                )
+                Text(
+                    text = "Input Mic: ${runtimeState.activeInputSummary}",
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text = "Output: ${runtimeState.activeOutputSummary} (RouteChanges: ${runtimeState.routeChangeCount})",
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+                val micSeconds = runtimeState.micFramesWritten / 48_000f
+                Text(
+                    text = String.format(
+                        Locale.US,
+                        "WAV 48kHz: %.1f s  |  AUDIO_SYNC: %d  |  Clock Drift: %+.2f ms",
+                        micSeconds,
+                        runtimeState.audioSyncCount,
+                        runtimeState.audioClockDriftMs
+                    ),
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
+
+                // Sezione Marker F4 (Tasti cuffia Mankiw + Pulsante UI)
+                Text(
+                    text = "🎯 Marker totali: ${runtimeState.markerCount}  |  Ultimo: ${runtimeState.lastMarkerInfo}",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = Color(0xFF0D47A1)
                 )
                 Text(
                     text = String.format(
                         Locale.US,
-                        "Batteria: %.0f%% (%.1f °C)  |  ThermalStatus: %d  |  Marker: %d",
+                        "Batteria: %.0f%% (%.1f °C)  |  ThermalStatus: %d",
                         runtimeState.batteryPercent,
                         runtimeState.batteryTempC,
-                        runtimeState.thermalStatus,
-                        runtimeState.markerCount
+                        runtimeState.thermalStatus
                     ),
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
                 )
             }
         }
 
-        // Pulsanti Azione (Avvia / Ferma / Marker Gigante)
+        // Controlli di configurazione o di sessione attiva
         if (!runtimeState.isRecording) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text("1. Posizione del telefono:", fontWeight = FontWeight.Bold)
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PhonePosition.entries.forEach { pos ->
                             FilterChip(
                                 selected = selectedPosition == pos,
@@ -354,9 +406,7 @@ fun SessionRecordingScreen() {
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("2. Attività:", fontWeight = FontWeight.Bold)
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ActivityKind.entries.forEach { act ->
                             FilterChip(
                                 selected = selectedActivity == act,
@@ -364,6 +414,22 @@ fun SessionRecordingScreen() {
                                 label = { Text(act.labelIt) }
                             )
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("3. Registra Microfono (mic_raw.wav 48 kHz):", fontWeight = FontWeight.Bold)
+                            Text("Forza BUILTIN_MIC + verifica tenuta A2DP", fontSize = 12.sp, color = Color.DarkGray)
+                        }
+                        Switch(
+                            checked = enableMic,
+                            onCheckedChange = { enableMic = it }
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -383,6 +449,7 @@ fun SessionRecordingScreen() {
                                 putExtra(LoggerForegroundService.EXTRA_POSITION, selectedPosition.code)
                                 putExtra(LoggerForegroundService.EXTRA_ACTIVITY, selectedActivity.code)
                                 putExtra(LoggerForegroundService.EXTRA_HEADPHONES, headphonesName)
+                                putExtra(LoggerForegroundService.EXTRA_ENABLE_MIC, enableMic)
                             }
                             ContextCompat.startForegroundService(context, startIntent)
                         },
@@ -396,26 +463,59 @@ fun SessionRecordingScreen() {
                 }
             }
         } else {
-            // Durante la sessione: Pulsante Gigante MARKER + Pulsante STOP
-            Button(
-                onClick = {
-                    val markerIntent = Intent(context, LoggerForegroundService::class.java).apply {
-                        action = LoggerForegroundService.ACTION_ADD_UI_MARKER
-                    }
-                    context.startService(markerIntent)
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(84.dp)
+            // Pulsanti grandi di riserva a schermo (1x Evento e 2x Incrocio) oltre ai tasti fisici delle cuffie
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = "📍 AGGIUNGI MARKER EVENTO / INCROCIO (${runtimeState.markerCount})",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Button(
+                    onClick = {
+                        val markerIntent = Intent(context, LoggerForegroundService::class.java).apply {
+                            action = LoggerForegroundService.ACTION_ADD_UI_MARKER
+                            putExtra(LoggerForegroundService.EXTRA_MARKER_TYPE, 1)
+                        }
+                        context.startService(markerIntent)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(78.dp)
+                ) {
+                    Text(
+                        text = "🚗 MARKER 1x\n(Evento)",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        val markerIntent = Intent(context, LoggerForegroundService::class.java).apply {
+                            action = LoggerForegroundService.ACTION_ADD_UI_MARKER
+                            putExtra(LoggerForegroundService.EXTRA_MARKER_TYPE, 2)
+                        }
+                        context.startService(markerIntent)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(78.dp)
+                ) {
+                    Text(
+                        text = "🔀 MARKER 2x\n(Incrocio)",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
+
+            Text(
+                text = "💡 Puoi premere il tasto fisico sulle cuffie Mankiw: 1 tocco = Evento (1 beep), 2 tocchi = Incrocio (2 beep).",
+                fontSize = 12.sp,
+                color = Color(0xFF1B5E20)
+            )
 
             Button(
                 onClick = {
@@ -435,7 +535,7 @@ fun SessionRecordingScreen() {
 
         HorizontalDivider()
 
-        // Elenco sessioni salvate in locale + Pulsante Cancella tutte le sessioni
+        // Elenco sessioni salvate in locale
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -446,9 +546,7 @@ fun SessionRecordingScreen() {
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp
             )
-            OutlinedButton(
-                onClick = { savedSessions = listSavedSessions(sessionsRoot) }
-            ) {
+            OutlinedButton(onClick = { savedSessions = listSavedSessions(sessionsRoot) }) {
                 Text("Aggiorna")
             }
         }
@@ -462,7 +560,9 @@ fun SessionRecordingScreen() {
         } else {
             savedSessions.forEach { dir ->
                 val binFile = File(dir, "sensors.bin")
-                val sizeKb = if (binFile.exists()) binFile.length() / 1024L else 0L
+                val wavFile = File(dir, "mic_raw.wav")
+                val binKb = if (binFile.exists()) binFile.length() / 1024L else 0L
+                val wavKb = if (wavFile.exists()) wavFile.length() / 1024L else 0L
                 val recordCount = if (binFile.exists() && binFile.length() >= 32L) {
                     (binFile.length() - 32L) / 32L
                 } else 0L
@@ -479,7 +579,7 @@ fun SessionRecordingScreen() {
                             fontSize = 13.sp
                         )
                         Text(
-                            text = "sensors.bin: $sizeKb KB ($recordCount record da 32B) • manifest.json presente",
+                            text = "sensors.bin: $binKb KB ($recordCount rec) • mic_raw.wav: ${if (wavFile.exists()) "$wavKb KB" else "assente"}",
                             fontSize = 12.sp,
                             color = Color(0xFF455A64)
                         )
@@ -504,7 +604,7 @@ fun SessionRecordingScreen() {
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Cancellare tutte le sessioni?") },
             text = {
-                Text("Tutti i file sensors.bin, manifest.json e gli audio registrati nella memoria dell'app verranno eliminati definitivamente.")
+                Text("Tutti i file sensors.bin, manifest.json e mic_raw.wav registrati nella memoria dell'app verranno eliminati definitivamente.")
             },
             confirmButton = {
                 Button(

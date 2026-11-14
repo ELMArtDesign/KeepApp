@@ -1,9 +1,12 @@
-# File di configurazione locale di Android Studio / Gradle (contengono percorsi personali)
+# File di configurazione locale di Android Studio / Gradle / VSCode (contengono percorsi personali)
 local.properties
 .gradle/
 build/
 */build/
+bin/
+*/bin/
 .idea/
+.vscode/
 *.iml
 *.ipr
 *.iws
@@ -12,6 +15,7 @@ Thumbs.db
 captures/
 .externalNativeBuild/
 .cxx/
+gradle/gradle-daemon-jvm.properties
 
 # Keystore, firme e chiavi segrete (MAI nel repository)
 *.jks
