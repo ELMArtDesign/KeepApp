@@ -1,0 +1,42 @@
+# File di configurazione locale di Android Studio / Gradle (contengono percorsi personali)
+local.properties
+.gradle/
+build/
+*/build/
+.idea/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Keystore, firme e chiavi segrete (MAI nel repository)
+*.jks
+*.keystore
+*.key
+*.pem
+keystore.properties
+secrets.properties
+
+# Dati registrati, sessioni di test, audio e archivi esportati (MAI nel repository!)
+session_*/
+sessions/
+exports/
+*.bin
+*.wav
+*.pcm
+*.opus
+*.ogg
+*.mp3
+*.aac
+*.zip
+*.log
+
+# Ambiente virtuale Python per gli script di analisi PC
+.venv/
+venv/
+__pycache__/
+*.pyc

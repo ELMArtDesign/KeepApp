@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copyright 2026 Adriano D'Aprile
+  Licensed under the Apache License, Version 2.0
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      VINCOLO FASE 0: NESSUN PERMESSO INTERNET.
+      L'applicazione opera al 100% offline e salva i dati solo localmente.
+    -->
+
+    <!-- Permessi per il Foreground Service (Android 9+ e tipi specifici Android 14+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <!-- WakeLock per mantenere attivi CPU e campionamento sensori a schermo spento -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Posizione tramite GPS_PROVIDER nativo (senza Google Play Services) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Riconoscimento attività fisica (necessario su Android 10+ per TYPE_STEP_DETECTOR) -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+
+    <!-- Sensori ad alta frequenza (~100 Hz) su Android 12+ (targetSdk >= 31) -->
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+
+    <!-- Microfono per il test A2DP + BUILTIN_MIC (Milestone 2) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Notifica persistente del Foreground Service su Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:allowBackup="false"
+        android:label="KeepApp Logger (Fase 0)"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Servizio in primo piano (F2) per la registrazione continua a schermo spento.
+        -->
+        <service
+            android:name=".service.LoggerForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location|microphone|mediaPlayback" />
+
+    </application>
+
+</manifest>
