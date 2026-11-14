@@ -46,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
@@ -53,9 +54,11 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,15 +74,25 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import it.daprile.keepapp.core.format.ActivityKind
 import it.daprile.keepapp.core.format.PhonePosition
+import it.daprile.keepapp.logger.audio.BluetoothLatencyCalibrator
+import it.daprile.keepapp.logger.audio.CalibrationResult
+import it.daprile.keepapp.logger.audio.SampleAccurateMetronome
 import it.daprile.keepapp.logger.data.DeviceInfoCollector
 import it.daprile.keepapp.logger.data.DeviceSnapshot
 import it.daprile.keepapp.logger.data.SessionFileWriter
 import it.daprile.keepapp.logger.service.LoggerForegroundService
 import java.io.File
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
- * Activity principale di KeepApp Logger (Fase 0 – Milestone 2).
+ * Activity principale di KeepApp Logger (Fase 0 – Milestone 3).
+ *
+ * Offre 3 schede:
+ * 1. "Sessione (F2–F4)": registrazione sensori 100Hz, GPS, microfono 48kHz, verifica A2DP e marker cuffie.
+ * 2. "Metronomo & BT (F5/F6)": test metronomo sample-accurate (WRITE_BLOCKING, jitter, underrun)
+ *    e calibrazione latenza Bluetooth ("Batti a tempo" 16 click vs "A contatto" 5 click).
+ * 3. "Info Dispositivo (F1)": stato barometro, dispositivi audio e lista completa sensori.
  */
 class MainActivity : ComponentActivity() {
 
@@ -159,14 +172,14 @@ fun KeepAppLoggerRoot() {
                     .padding(top = 12.dp)
             ) {
                 Text(
-                    text = "KeepApp Logger — Fase 0 (M2)",
+                    text = "KeepApp Logger — Fase 0 (M3)",
                     color = Color.White,
                     fontSize = 19.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
                 Text(
-                    text = "Sensori 100Hz • GPS • Mic BUILTIN 48kHz • Test A2DP & Marker Cuffie",
+                    text = "Sensori • Mic 48kHz A2DP • Marker • Metronomo F5 • Calibrazione BT F6",
                     color = Color(0xFFB0BEC5),
                     fontSize = 11.sp,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
@@ -180,15 +193,20 @@ fun KeepAppLoggerRoot() {
                     Tab(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        text = { Text("1. Sessione (F2–F4)") }
+                        text = { Text("1. Sessione", fontSize = 13.sp) }
                     )
                     Tab(
                         selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("2. Metronomo & BT", fontSize = 13.sp) }
+                    )
+                    Tab(
+                        selected = selectedTab == 2,
                         onClick = {
                             deviceSnapshot = DeviceInfoCollector.collectDeviceSnapshot(context)
-                            selectedTab = 1
+                            selectedTab = 2
                         },
-                        text = { Text("2. Info Dispositivo (F1)") }
+                        text = { Text("3. Dispositivo", fontSize = 13.sp) }
                     )
                 }
             }
@@ -208,32 +226,337 @@ fun KeepAppLoggerRoot() {
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
-                            text = "Permesso Microfono e Posizione GPS richiesti per M2",
+                            text = "Permesso Microfono e Posizione GPS richiesti",
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFFE65100)
                         )
-                        Text(
-                            text = "Premi qui sotto per autorizzare la cattura dal microfono interno (48 kHz) e verificare che le cuffie restino in A2DP.",
-                            fontSize = 13.sp
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Button(onClick = { permLauncher.launch(permissionsToRequest) }) {
-                            Text("Concedi Permessi (Incluso Microfono)")
+                            Text("Concedi Permessi")
                         }
                     }
                 }
             }
 
-            if (selectedTab == 0) {
-                SessionRecordingScreen()
-            } else {
-                DeviceInfoScreen(
+            when (selectedTab) {
+                0 -> SessionRecordingScreen()
+                1 -> MetronomeAndCalibrationScreen()
+                2 -> DeviceInfoScreen(
                     snapshot = deviceSnapshot,
                     onRefresh = {
                         deviceSnapshot = DeviceInfoCollector.collectDeviceSnapshot(context)
                     }
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun MetronomeAndCalibrationScreen() {
+    val context = LocalContext.current
+    val standaloneMetronome = remember { SampleAccurateMetronome() }
+    val calibrator = remember { BluetoothLatencyCalibrator(context) }
+
+    val metroTelemetry by standaloneMetronome.telemetry.collectAsState()
+    val calState by calibrator.uiState.collectAsState()
+
+    var bpmSlider by remember { mutableFloatStateOf(160f) }
+    var headphonesName by remember { mutableStateOf("MANKIW-X15") }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            standaloneMetronome.stop()
+            calibrator.stopAll()
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // === SEZIONE F5: TEST METRONOMO SAMPLE-ACCURATE ===
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = if (metroTelemetry.isRunning) Color(0xFFE3F2FD) else Color(0xFFF5F5F5)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = "🎵 F5 — Test Metronomo Sample-Accurate (AudioTrack WRITE_BLOCKING)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = Color(0xFF0D47A1)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Flusso continuo di silenzio a 48.000 Hz con impulso di 12 ms a 1.000 Hz sommato al campione esatto.",
+                    fontSize = 12.sp,
+                    color = Color.DarkGray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "BPM Obiettivo: ${bpmSlider.roundToInt()} BPM (100 – 190)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Slider(
+                    value = bpmSlider,
+                    onValueChange = {
+                        bpmSlider = it
+                        standaloneMetronome.setBpm(it.roundToInt())
+                    },
+                    valueRange = 100f..190f
+                )
+
+                Text(
+                    text = String.format(
+                        Locale.US,
+                        "Click emessi: %d  |  Underrun: %d",
+                        metroTelemetry.clicksEmitted,
+                        metroTelemetry.underrunCount
+                    ),
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+                Text(
+                    text = String.format(
+                        Locale.US,
+                        "Jitter RMS: %.2f ms  |  Jitter Max: %.2f ms  |  Ultimo: %.2f ms",
+                        metroTelemetry.rmsJitterMs,
+                        metroTelemetry.maxJitterMs,
+                        metroTelemetry.lastInterClickJitterMs
+                    ),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = if (metroTelemetry.rmsJitterMs <= 10f) Color(0xFF1B5E20) else Color(0xFFE65100)
+                )
+                Text(
+                    text = String.format(
+                        Locale.US,
+                        "Buffer HW stimato (getTimestamp): %.1f ms",
+                        metroTelemetry.estimatedHwLatencyMs
+                    ),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+                if (!metroTelemetry.isRunning) {
+                    Button(
+                        onClick = {
+                            calibrator.stopAll()
+                            standaloneMetronome.start(bpmSlider.roundToInt())
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("▶ AVVIA TEST METRONOMO (${bpmSlider.roundToInt()} BPM)")
+                    }
+                } else {
+                    Button(
+                        onClick = { standaloneMetronome.stop() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("⏹ FERMA METRONOMO")
+                    }
+                }
+            }
+        }
+
+        // === SEZIONE F6: CALIBRAZIONE LATENZA BLUETOOTH ===
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8E1)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = "🎧 F6 — Calibrazione Latenza Bluetooth",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = Color(0xFFE65100)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = headphonesName,
+                    onValueChange = { headphonesName = it },
+                    label = { Text("Profilo Cuffia da calibrare") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // --- Metodo (a): Batti a tempo (16 click) ---
+                Text(
+                    text = "Metodo (a): \"Batti a tempo\" (16 tocchi a 120 BPM)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = "Ascolta il click nelle cuffie e tocca il pulsante grande a tempo per 16 volte.",
+                    fontSize = 12.sp,
+                    color = Color.DarkGray
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                if (!calState.isTapTestRunning) {
+                    Button(
+                        onClick = {
+                            standaloneMetronome.stop()
+                            calibrator.startTapCalibration(headphonesName)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("▶ AVVIA CALIBRAZIONE \"BATTI A TEMPO\"")
+                    }
+                } else {
+                    Button(
+                        onClick = { calibrator.registerUserTap() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD84315)),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(92.dp)
+                    ) {
+                        Text(
+                            text = "👆 TOCCA A TEMPO COL CLICK!\n(${calState.tapCount} / ${calState.tapTarget})",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                calState.tapResult?.let { res ->
+                    Spacer(modifier = Modifier.height(6.dp))
+                    CalibrationResultBadge(res)
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+
+                // --- Metodo (b): A contatto (5 click sul microfono) ---
+                Text(
+                    text = "Metodo (b): \"A contatto\" (5 impulsi cuffia → microfono)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = "Alza il volume al massimo e appoggia il trasduttore vibrante della cuffia MANKIW-X15 contro il bordo inferiore dello Xiaomi (vicino al microfono).",
+                    fontSize = 12.sp,
+                    color = Color.DarkGray
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Button(
+                    onClick = {
+                        standaloneMetronome.stop()
+                        calibrator.startContactCalibration(headphonesName)
+                    },
+                    enabled = !calState.isContactTestRunning,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (calState.isContactTestRunning) "⏳ EMISSIONE IMPULSO ${calState.contactPulseIndex} / 5..."
+                        else "▶ AVVIA CALIBRAZIONE \"A CONTATTO\" (5 CLICK)"
+                    )
+                }
+
+                calState.contactResult?.let { res ->
+                    Spacer(modifier = Modifier.height(6.dp))
+                    CalibrationResultBadge(res)
+                }
+
+                // --- Confronto diretto se entrambi i metodi sono stati eseguiti ---
+                val tapRes = calState.tapResult
+                val contactRes = calState.contactResult
+                if (tapRes != null && contactRes != null) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    val diff = kotlin.math.abs(tapRes.meanOffsetMs - contactRes.meanOffsetMs)
+                    Text(
+                        text = String.format(
+                            Locale.US,
+                            "📊 CONFRONTO F6: Batti a tempo = %.1f ms (±%.1f) vs A contatto = %.1f ms (±%.1f) • Δ = %.1f ms",
+                            tapRes.meanOffsetMs,
+                            tapRes.stdDevMs,
+                            contactRes.meanOffsetMs,
+                            contactRes.stdDevMs,
+                            diff
+                        ),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = Color(0xFF0D47A1)
+                    )
+                }
+            }
+        }
+
+        // Storico calibrazioni salvate per cuffia
+        if (calState.savedProfiles.isNotEmpty()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "Calibrazioni salvate per cuffia (${calState.savedProfiles.size}):",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    calState.savedProfiles.take(6).forEach { line ->
+                        Text(
+                            text = "• $line",
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CalibrationResultBadge(res: CalibrationResult) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (res.validSamples > 0) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Text(
+                text = "${res.method} — Campioni validi: ${res.validSamples}/${res.totalSamples}",
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp
+            )
+            if (res.validSamples > 0) {
+                Text(
+                    text = String.format(
+                        Locale.US,
+                        "Offset Medio: %.1f ms  |  Dispersione (StdDev): ±%.1f ms  |  [min %.0f, max %.0f ms]",
+                        res.meanOffsetMs,
+                        res.stdDevMs,
+                        res.minOffsetMs,
+                        res.maxOffsetMs
+                    ),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = Color(0xFF1B5E20),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = res.notes,
+                fontSize = 11.sp,
+                color = Color.DarkGray
+            )
         }
     }
 }
@@ -246,8 +569,10 @@ fun SessionRecordingScreen() {
 
     var selectedPosition by remember { mutableStateOf(PhonePosition.ARM) }
     var selectedActivity by remember { mutableStateOf(ActivityKind.WALK) }
-    var headphonesName by remember { mutableStateOf("Mankiw Bone Conduction") }
+    var headphonesName by remember { mutableStateOf("MANKIW-X15") }
     var enableMic by remember { mutableStateOf(true) }
+    var enableMetroInSession by remember { mutableStateOf(false) }
+    var sessionMetroBpm by remember { mutableFloatStateOf(160f) }
 
     val sessionsRoot = remember { SessionFileWriter.getSessionsRootDir(context.filesDir) }
     var savedSessions by remember { mutableStateOf(listSavedSessions(sessionsRoot)) }
@@ -264,7 +589,6 @@ fun SessionRecordingScreen() {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Pannello Stato in Tempo Reale (Sensori + Audio A2DP + Marker)
         Card(
             colors = CardDefaults.cardColors(
                 containerColor = if (runtimeState.isRecording) Color(0xFFE8F5E9) else Color(0xFFF5F5F5)
@@ -273,7 +597,7 @@ fun SessionRecordingScreen() {
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text(
-                    text = if (runtimeState.isRecording) "🔴 REGISTRAZIONE M2 ATTIVA (Puoi spegnere lo schermo)"
+                    text = if (runtimeState.isRecording) "🔴 REGISTRAZIONE ATTIVA (Puoi spegnere lo schermo)"
                     else "⚪ PRONTO PER REGISTRARE",
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
@@ -325,7 +649,6 @@ fun SessionRecordingScreen() {
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
 
-                // Sezione Audio M2: A2DP vs SCO + AUDIO_SYNC + Microfono
                 val btStatusText = when {
                     runtimeState.isScoActive -> "⚠️ ATTENZIONE: BLUETOOTH SCO/HFP ATTIVO!"
                     runtimeState.isA2dpActive -> "✅ CUFFIA IN BLUETOOTH A2DP (Alta qualità OK)"
@@ -365,10 +688,24 @@ fun SessionRecordingScreen() {
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
                 )
+                if (runtimeState.metronomeEnabled) {
+                    Text(
+                        text = String.format(
+                            Locale.US,
+                            "🎵 Metronomo (%d BPM): %d click | Underrun: %d | Jitter RMS: %.2f ms",
+                            runtimeState.metronomeBpm,
+                            runtimeState.metronomeClicks,
+                            runtimeState.metronomeUnderruns,
+                            runtimeState.metronomeRmsJitterMs
+                        ),
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFF0D47A1)
+                    )
+                }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
 
-                // Sezione Marker F4 (Tasti cuffia Mankiw + Pulsante UI)
                 Text(
                     text = "🎯 Marker totali: ${runtimeState.markerCount}  |  Ultimo: ${runtimeState.lastMarkerInfo}",
                     fontWeight = FontWeight.Bold,
@@ -389,7 +726,6 @@ fun SessionRecordingScreen() {
             }
         }
 
-        // Controlli di configurazione o di sessione attiva
         if (!runtimeState.isRecording) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp)) {
@@ -424,15 +760,32 @@ fun SessionRecordingScreen() {
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("3. Registra Microfono (mic_raw.wav 48 kHz):", fontWeight = FontWeight.Bold)
-                            Text("Forza BUILTIN_MIC + verifica tenuta A2DP", fontSize = 12.sp, color = Color.DarkGray)
+                            Text("Forza BUILTIN_MIC + verifica A2DP", fontSize = 12.sp, color = Color.DarkGray)
                         }
-                        Switch(
-                            checked = enableMic,
-                            onCheckedChange = { enableMic = it }
+                        Switch(checked = enableMic, onCheckedChange = { enableMic = it })
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("4. Metronomo in Sessione (${sessionMetroBpm.roundToInt()} BPM):", fontWeight = FontWeight.Bold)
+                            Text("Salva record METRONOME_CLICK in sensors.bin", fontSize = 12.sp, color = Color.DarkGray)
+                        }
+                        Switch(checked = enableMetroInSession, onCheckedChange = { enableMetroInSession = it })
+                    }
+
+                    if (enableMetroInSession) {
+                        Slider(
+                            value = sessionMetroBpm,
+                            onValueChange = { sessionMetroBpm = it },
+                            valueRange = 100f..190f
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = headphonesName,
                         onValueChange = { headphonesName = it },
@@ -450,6 +803,8 @@ fun SessionRecordingScreen() {
                                 putExtra(LoggerForegroundService.EXTRA_ACTIVITY, selectedActivity.code)
                                 putExtra(LoggerForegroundService.EXTRA_HEADPHONES, headphonesName)
                                 putExtra(LoggerForegroundService.EXTRA_ENABLE_MIC, enableMic)
+                                putExtra(LoggerForegroundService.EXTRA_ENABLE_METRONOME, enableMetroInSession)
+                                putExtra(LoggerForegroundService.EXTRA_METRONOME_BPM, sessionMetroBpm.roundToInt())
                             }
                             ContextCompat.startForegroundService(context, startIntent)
                         },
@@ -463,7 +818,6 @@ fun SessionRecordingScreen() {
                 }
             }
         } else {
-            // Pulsanti grandi di riserva a schermo (1x Evento e 2x Incrocio) oltre ai tasti fisici delle cuffie
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -482,11 +836,7 @@ fun SessionRecordingScreen() {
                         .weight(1f)
                         .height(78.dp)
                 ) {
-                    Text(
-                        text = "🚗 MARKER 1x\n(Evento)",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text("🚗 MARKER 1x\n(Evento)", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 }
 
                 Button(
@@ -503,19 +853,9 @@ fun SessionRecordingScreen() {
                         .weight(1f)
                         .height(78.dp)
                 ) {
-                    Text(
-                        text = "🔀 MARKER 2x\n(Incrocio)",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text("🔀 MARKER 2x\n(Incrocio)", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 }
             }
-
-            Text(
-                text = "💡 Puoi premere il tasto fisico sulle cuffie Mankiw: 1 tocco = Evento (1 beep), 2 tocchi = Incrocio (2 beep).",
-                fontSize = 12.sp,
-                color = Color(0xFF1B5E20)
-            )
 
             Button(
                 onClick = {
@@ -535,7 +875,6 @@ fun SessionRecordingScreen() {
 
         HorizontalDivider()
 
-        // Elenco sessioni salvate in locale
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,

@@ -48,6 +48,7 @@ import it.daprile.keepapp.core.format.BinaryRecord
 import it.daprile.keepapp.core.format.PhonePosition
 import it.daprile.keepapp.core.format.SessionConfig
 import it.daprile.keepapp.logger.MainActivity
+import it.daprile.keepapp.logger.audio.SampleAccurateMetronome
 import it.daprile.keepapp.logger.data.DeviceInfoCollector
 import it.daprile.keepapp.logger.data.MicrophoneWavRecorder
 import it.daprile.keepapp.logger.data.SessionFileWriter
@@ -58,7 +59,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Stato in tempo reale della sessione di registrazione esposto alla UI Jetpack Compose (M1 + M2).
+ * Stato in tempo reale della sessione di registrazione esposto alla UI Jetpack Compose (M1–M3).
  */
 data class LoggerRuntimeState(
     val isRecording: Boolean = false,
@@ -86,11 +87,16 @@ data class LoggerRuntimeState(
     val activeOutputSummary: String = "-",
     val isA2dpActive: Boolean = false,
     val isScoActive: Boolean = false,
-    val routeChangeCount: Long = 0L
+    val routeChangeCount: Long = 0L,
+    val metronomeEnabled: Boolean = false,
+    val metronomeBpm: Int = 160,
+    val metronomeClicks: Long = 0L,
+    val metronomeUnderruns: Int = 0,
+    val metronomeRmsJitterMs: Float = 0f
 )
 
 /**
- * Foreground Service di registrazione per la Fase 0 (F2, F3, F4 — Milestone 1 & 2).
+ * Foreground Service di registrazione per la Fase 0 (F2, F3, F4, F5 — Milestone 1, 2 & 3).
  */
 class LoggerForegroundService : Service(), SensorEventListener, LocationListener {
 
@@ -106,12 +112,12 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
     private var fileWriter: SessionFileWriter? = null
     private var micRecorder: MicrophoneWavRecorder? = null
     private var headsetButtonController: HeadsetMediaButtonController? = null
+    private var sessionMetronome: SampleAccurateMetronome? = null
 
     private var sessionStartNs: Long = 0L
     private var lastWindowNs: Long = 0L
     private var heartbeatSeq: Long = 0L
 
-    // Contatori atomici per le frequenze reali e le statistiche
     private val windowAccelEvents = AtomicLong(0L)
     private val windowGyroEvents = AtomicLong(0L)
     private val windowMagEvents = AtomicLong(0L)
@@ -142,10 +148,6 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
     private var lastGyroHz = 0f
     private var lastMagHz = 0f
 
-    /**
-     * Callback per monitorare ogni variazione dei dispositivi audio (F2: ROUTE_CHANGE)
-     * e verificare che le cuffie Bluetooth restino sempre in A2DP (tipo 8) e non in SCO/HFP (tipo 7).
-     */
     private val audioDeviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
             if (_runtimeState.value.isRecording) {
@@ -182,21 +184,30 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
                 if (!_runtimeState.value.isRecording) {
                     val posCode = intent.getStringExtra(EXTRA_POSITION) ?: PhonePosition.ARM.code
                     val actCode = intent.getStringExtra(EXTRA_ACTIVITY) ?: ActivityKind.WALK.code
-                    val headphones = intent.getStringExtra(EXTRA_HEADPHONES) ?: "Mankiw Bone Conduction"
+                    val headphones = intent.getStringExtra(EXTRA_HEADPHONES) ?: "MANKIW-X15"
                     val enableMic = intent.getBooleanExtra(EXTRA_ENABLE_MIC, true)
+                    val enableMetro = intent.getBooleanExtra(EXTRA_ENABLE_METRONOME, false)
+                    val metroBpm = intent.getIntExtra(EXTRA_METRONOME_BPM, 160)
 
                     val position = PhonePosition.entries.find { it.code == posCode } ?: PhonePosition.ARM
                     val activityKind = ActivityKind.entries.find { it.code == actCode } ?: ActivityKind.WALK
 
                     startLoggingSession(
-                        SessionConfig(
+                        config = SessionConfig(
                             position = position,
                             activityKind = activityKind,
                             headphonesName = headphones,
                             enableMicrophone = enableMic && hasAudioPermission()
-                        )
+                        ),
+                        enableMetronome = enableMetro,
+                        initialBpm = metroBpm
                     )
                 }
+            }
+
+            ACTION_SET_METRONOME_BPM -> {
+                val newBpm = intent.getIntExtra(EXTRA_METRONOME_BPM, 160)
+                sessionMetronome?.setBpm(newBpm)
             }
 
             ACTION_ADD_UI_MARKER -> {
@@ -225,9 +236,12 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
     }
 
     @SuppressLint("MissingPermission", "WakelockTimeout")
-    private fun startLoggingSession(config: SessionConfig) {
-        // 1. Avvia il servizio in primo piano con i tipi compatibili con i permessi concessi
-        val notification = buildNotification("Registrazione sensori, GPS e Microfono A2DP attiva")
+    private fun startLoggingSession(
+        config: SessionConfig,
+        enableMetronome: Boolean,
+        initialBpm: Int
+    ) {
+        val notification = buildNotification("Registrazione sensori, GPS e Audio attiva")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             var fgsType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
             if (hasLocationPermission()) {
@@ -241,7 +255,6 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
             startForeground(NOTIFICATION_ID, notification)
         }
 
-        // 2. Acquisisci il WakeLock parziale per impedire la sospensione della CPU a schermo spento
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
@@ -251,7 +264,6 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
             acquire(4 * 60 * 60 * 1000L)
         }
 
-        // 3. Inizializza contatori e scrittore su thread dedicato
         val nowElapsedNs = SystemClock.elapsedRealtimeNanos()
         val nowUnixMs = System.currentTimeMillis()
         sessionStartNs = nowElapsedNs
@@ -281,13 +293,11 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
         writer.start()
         fileWriter = writer
 
-        // 4. Crea l'HandlerThread dedicato per la ricezione dei sensori ad alta frequenza
         val thread = HandlerThread("KeepApp-SensorThread").apply { start() }
         val handler = Handler(thread.looper)
         sensorThread = thread
         sensorHandler = handler
 
-        // 5. Registra Accelerometro (~100 Hz), Giroscopio (~100 Hz), Magnetometro (~50 Hz), Step Detector
         sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let { accel ->
             sensorManager.registerListener(this, accel, 10_000, 0, handler)
         }
@@ -304,7 +314,6 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
             sensorManager.registerListener(this, baro, SensorManager.SENSOR_DELAY_NORMAL, 0, handler)
         }
 
-        // 6. Registra GPS nativo (LocationManager.GPS_PROVIDER) a 1 Hz
         if (hasLocationPermission()) {
             try {
                 if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
@@ -320,7 +329,6 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
             }
         }
 
-        // 7. Attiva MediaSession e intercettazione tasti cuffie Bluetooth (F4)
         val mediaController = HeadsetMediaButtonController(this) { flag, keyCode, pressCount, desc ->
             recordMarkerEvent(
                 markerFlag = flag,
@@ -332,7 +340,6 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
         mediaController.start()
         headsetButtonController = mediaController
 
-        // 8. Registra AudioDeviceCallback e avvia la registrazione microfonica WAV 48 kHz (M2)
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, mainHandler)
 
         if (config.enableMicrophone && hasAudioPermission()) {
@@ -346,7 +353,15 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
             micRecorder = recorder
         }
 
-        // 9. Emetti subito ROUTE_CHANGE iniziale (reason = 0), HEARTBEAT (seq = 0) e THERMAL
+        // Se richiesto, avvia il metronomo sample-accurate che registra ogni METRONOME_CLICK in sensors.bin
+        if (enableMetronome) {
+            val metro = SampleAccurateMetronome { clickRecord ->
+                writer.enqueue(clickRecord)
+            }
+            metro.start(initialBpm = initialBpm)
+            sessionMetronome = metro
+        }
+
         emitRouteChangeRecord(reason = 0)
         emitHeartbeatAndThermal(nowElapsedNs)
 
@@ -357,7 +372,9 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
             activeOutputSummary = currentOutputRouteSummary,
             isA2dpActive = currentA2dpState,
             isScoActive = currentScoState,
-            routeChangeCount = totalRouteChanges.get()
+            routeChangeCount = totalRouteChanges.get(),
+            metronomeEnabled = enableMetronome,
+            metronomeBpm = initialBpm
         )
 
         mainHandler.postDelayed(tickerRunnable, 1_000L)
@@ -380,6 +397,9 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
             locationManager.removeUpdates(this)
         } catch (_: Exception) {
         }
+
+        sessionMetronome?.stop()
+        sessionMetronome = null
 
         micRecorder?.stopAndClose()
         micRecorder = null
@@ -430,6 +450,7 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
 
         val thermalSnap = DeviceInfoCollector.readThermalAndBattery(this)
         val mic = micRecorder
+        val metroTel = sessionMetronome?.telemetry?.value
 
         _runtimeState.value = LoggerRuntimeState(
             isRecording = true,
@@ -457,15 +478,15 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
             activeOutputSummary = currentOutputRouteSummary,
             isA2dpActive = currentA2dpState,
             isScoActive = currentScoState,
-            routeChangeCount = totalRouteChanges.get()
+            routeChangeCount = totalRouteChanges.get(),
+            metronomeEnabled = metroTel?.isRunning == true,
+            metronomeBpm = metroTel?.bpm ?: 160,
+            metronomeClicks = metroTel?.clicksEmitted ?: 0L,
+            metronomeUnderruns = metroTel?.underrunCount ?: 0,
+            metronomeRmsJitterMs = metroTel?.rmsJitterMs ?: 0f
         )
     }
 
-    /**
-     * Emette un record `ROUTE_CHANGE` (tipo 13) con lo stato attuale dei dispositivi di ingresso e uscita.
-     * Permette di verificare che le cuffie Bluetooth restino in `TYPE_BLUETOOTH_A2DP` (8)
-     * e non passino mai a `TYPE_BLUETOOTH_SCO` (7) mentre il microfono interno registra.
-     */
     private fun emitRouteChangeRecord(reason: Int) {
         val writer = fileWriter ?: return
         val nowNs = SystemClock.elapsedRealtimeNanos()
@@ -563,7 +584,7 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
         val record = BinaryRecord.ofFloats(
             timestampNs = nowNs,
             recordType = BinaryFormat.TYPE_MARKER,
-            flags = markerFlag, // 1 = Evento (1 click), 2 = Incrocio (2 click), 3 = Pulsante UI
+            flags = markerFlag,
             reserved = rawKeyCode.coerceIn(0, 32767).toShort(),
             f0 = markerIdx.toFloat(),
             f1 = rawKeyCode.toFloat(),
@@ -577,8 +598,6 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
             lastMarkerInfo = lastMarkerDescription
         )
     }
-
-    // === Callback SensorEventListener (eseguite su KeepApp-SensorThread) ===
 
     override fun onSensorChanged(event: SensorEvent) {
         val writer = fileWriter ?: return
@@ -656,8 +675,6 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-
-    // === Callback LocationListener (GPS_PROVIDER nativo a 1 Hz) ===
 
     override fun onLocationChanged(location: Location) {
         val writer = fileWriter ?: return
@@ -769,11 +786,14 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
         const val ACTION_START_SESSION = "it.daprile.keepapp.logger.action.START_SESSION"
         const val ACTION_STOP_SESSION = "it.daprile.keepapp.logger.action.STOP_SESSION"
         const val ACTION_ADD_UI_MARKER = "it.daprile.keepapp.logger.action.ADD_UI_MARKER"
+        const val ACTION_SET_METRONOME_BPM = "it.daprile.keepapp.logger.action.SET_METRONOME_BPM"
 
         const val EXTRA_POSITION = "extra_position"
         const val EXTRA_ACTIVITY = "extra_activity"
         const val EXTRA_HEADPHONES = "extra_headphones"
         const val EXTRA_ENABLE_MIC = "extra_enable_mic"
+        const val EXTRA_ENABLE_METRONOME = "extra_enable_metronome"
+        const val EXTRA_METRONOME_BPM = "extra_metronome_bpm"
         const val EXTRA_MARKER_TYPE = "extra_marker_type"
 
         private val _runtimeState = MutableStateFlow(LoggerRuntimeState())
