@@ -81,6 +81,7 @@ import it.daprile.keepapp.logger.audio.SampleAccurateMetronome
 import it.daprile.keepapp.logger.data.DeviceInfoCollector
 import it.daprile.keepapp.logger.data.DeviceSnapshot
 import it.daprile.keepapp.logger.data.SessionFileWriter
+import it.daprile.keepapp.logger.data.SessionZipExporter
 import it.daprile.keepapp.logger.data.XiaomiOnboardingHelper
 import it.daprile.keepapp.logger.service.LoggerForegroundService
 import java.io.File
@@ -174,14 +175,14 @@ fun KeepAppLoggerRoot() {
                     .padding(top = 12.dp)
             ) {
                 Text(
-                    text = "KeepApp Logger — Fase 0 (M4)",
+                    text = "KeepApp Logger — Fase 0 (M5 Completa)",
                     color = Color.White,
                     fontSize = 19.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
                 Text(
-                    text = "F1–F6 • F7 Media3 + Sidechain EQ • F8 Ducking Spotify • F9 Xiaomi",
+                    text = "F1–F9 • F10 Esportazione .ZIP in Download / Condivisione",
                     color = Color(0xFFB0BEC5),
                     fontSize = 11.sp,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
@@ -891,6 +892,7 @@ fun SessionRecordingScreen() {
     val sessionsRoot = remember { SessionFileWriter.getSessionsRootDir(context.filesDir) }
     var savedSessions by remember { mutableStateOf(listSavedSessions(sessionsRoot)) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var exportStatusMessage by remember { mutableStateOf("") }
 
     LaunchedEffect(runtimeState.isRecording) {
         savedSessions = listSavedSessions(sessionsRoot)
@@ -1204,6 +1206,21 @@ fun SessionRecordingScreen() {
             }
         }
 
+        if (exportStatusMessage.isNotEmpty()) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = exportStatusMessage,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF0D47A1),
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+        }
+
         if (savedSessions.isEmpty()) {
             Text(
                 text = "Nessuna sessione presente nella memoria locale dell'app.",
@@ -1236,6 +1253,28 @@ fun SessionRecordingScreen() {
                             fontSize = 12.sp,
                             color = Color(0xFF455A64)
                         )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    exportStatusMessage = SessionZipExporter.exportToDownloads(context, dir)
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("💾 Salva .ZIP in Download", fontSize = 11.sp)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    exportStatusMessage = SessionZipExporter.shareSessionZip(context, dir)
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("📤 Condividi .ZIP", fontSize = 11.sp)
+                            }
+                        }
                     }
                 }
             }

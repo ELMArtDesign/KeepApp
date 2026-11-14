@@ -9,7 +9,7 @@
 
 ---
 
-## 2. Tabella Riepilogativa dei Test (Da compilare a ogni Milestone)
+## 2. Tabella Riepilogativa dei Test (M1 – M5)
 
 | Test / Verifica | Milestone | Stato | Valore Misurato / Esito | Note Tecniche |
 | :--- | :---: | :---: | :--- | :--- |
@@ -25,8 +25,9 @@
 | **Tasti AVRCP Cuffie Mankiw (`keyCode`)** | M2 | ✅ Superato | **Doppio click HW = `KEYCODE_MEDIA_NEXT (87)`** | Le `MANKIW-X15` inviano direttamente `KEYCODE_MEDIA_NEXT (87)` al doppio click |
 | **Jitter e Underrun Metronomo (`AudioTrack`)** | M3 | ✅ Superato | **`Underrun: 0` \| `Jitter RMS: 3.04 ms` \| `Max: 10.58 ms`** | Su 129 click a 160 BPM (`WRITE_BLOCKING` a 48 kHz), ampiamente entro il target $\le 10\text{–}15\text{ ms}$ |
 | **Calibrazione BT: Batti a Tempo vs Contatto** | M3 | ✅ Superato | **Contatto: `248.4 ms (±2.9 ms, 4/5)`** vs **Tap: `66.3 / -3.4 ms (±44–62 ms)`** | Il metodo "A contatto" funziona sulle cuffie ossee `MANKIW-X15` con precisione $\pm 2.9\text{ ms}$, mentre il tap umano anticipa il ritmo con alta dispersione |
-| **Qualità Time-Stretch `Media3` (0,85x – 1,15x)** | M4 | ⏳ In test | *Pronto in M4* | Voto 1–5 e impatto CPU |
-| **Sidechain EQ con `DynamicsProcessing`** | M4 | ⏳ In test | *Pronto in M4* | Attenuazione 300 Hz – 3 kHz udibile senza glitch |
-| **Ducking Dinamico con Spotify** | M4 | ⏳ In test | *Pronto in M4* | Abbassamento volume vs Pausa indesiderata |
-| **Onboarding Xiaomi / HyperOS** | M4 | ⏳ In test | *Pronto in M4* | Apertura Autostart + Risparmio batteria senza `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` |
-| **Corsa 60 min a Schermo Spento (HyperOS)** | M5 | ⏳ Da eseguire | *In attesa di M5* | Criterio finale: nessun buco `HEARTBEAT` > 15 s |
+| **Qualità Time-Stretch `Media3` (0,85x – 1,15x)** | M4 | ✅ Superato | **Voto qualità: `5 ★ / 5`** | Algoritmi Sonic di ExoPlayer a tonalità preservata validati tra `0.85x` e `1.15x` con impatto CPU minimo |
+| **Sidechain EQ con `DynamicsProcessing`** | M4 | ✅ Superato | **`Udibile: SÌ (Chiaro)` — Zero errori** | Attenuazione selettiva 300 Hz – 3 kHz (-12 dB con rampa 200 ms) agganciata all'`audioSessionId` di ExoPlayer (offload disattivato) |
+| **Ducking Dinamico con Spotify** | M4 | ✅ Superato | **`Si è abbassato (Ducking OK)`** | Richiesta dinamica `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` + rilascio a fine frase: Spotify abbassa il volume senza mettersi in pausa |
+| **Onboarding Xiaomi / HyperOS (F9)** | M4 | ✅ Superato | **Apertura Autostart + Risparmio Batteria OK** | Nessun uso di `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` |
+| **Esportazione `.zip` & Script Analisi PC (`F10/F11`)** | M5 | ✅ Completato | **`MediaStore.Downloads` + `tools/read_session.py`** | Script validato su sessione reale estratta dal dispositivo |
+| **Corsa 60 min a Schermo Spento (HyperOS)** | M5 | ⏳ Pronto per prova su strada | *Pronto per la corsa di 60 min di Adriano* | Criterio: nessun buco `HEARTBEAT` > 15 s |
