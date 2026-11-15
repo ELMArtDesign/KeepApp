@@ -346,10 +346,11 @@ private fun AudioEngineTestScreen(
                     Text(
                         text = String.format(
                             Locale.US,
-                            "PLL: %s (%d campioni)\nErrore residuo RMS: %.3f ms (target < 0.50 ms)\nDeriva clock: %+.1f ppm\nUnderrun AudioTrack: %d",
+                            "PLL: %s (%d campioni)\nErrore modello PLL: %.3f ms (target < 0.50 ms)\nJitter grezzo HAL BT: %.2f ms\nDeriva clock: %+.1f ppm\nUnderrun AudioTrack: %d",
                             pllStatus,
                             telemetry.pllSampleCount,
                             telemetry.pllResidualRmsMs,
+                            telemetry.rawHalJitterMs,
                             telemetry.pllSlopePpm,
                             telemetry.underrunCount
                         ),

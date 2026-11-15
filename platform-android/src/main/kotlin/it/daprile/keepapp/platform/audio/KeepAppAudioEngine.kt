@@ -49,6 +49,7 @@ data class AudioEngineTelemetry(
     val pllLocked: Boolean = false,
     val pllSampleCount: Int = 0,
     val pllResidualRmsMs: Float = 0f,
+    val rawHalJitterMs: Float = 0f,
     val pllSlopePpm: Float = 0f,
     val lastPhaseCorrectionUs: Int = 0
 )
@@ -400,6 +401,7 @@ class KeepAppAudioEngine(
             pllLocked = clockEstimator.isLocked,
             pllSampleCount = clockEstimator.sampleCount,
             pllResidualRmsMs = clockEstimator.residualErrorRmsMs,
+            rawHalJitterMs = clockEstimator.rawHalJitterRmsMs,
             pllSlopePpm = clockEstimator.estimatedSlopePpm,
             lastPhaseCorrectionUs = lastPhaseCorrectionUs
         )
