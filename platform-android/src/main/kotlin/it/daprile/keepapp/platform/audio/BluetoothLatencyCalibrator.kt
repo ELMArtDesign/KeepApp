@@ -195,14 +195,9 @@ class BluetoothLatencyCalibrator(
                 while (running) {
                     val read = recorder.read(tmp, 0, tmp.size, AudioRecord.READ_BLOCKING)
                     if (read > 0) {
-                        val hasHwTs = recorder.getTimestamp(recTs, AudioTimestamp.TIMEBASE_BOOTTIME) == AudioRecord.SUCCESS &&
-                            recTs.nanoTime > 0L
-                        if (hasHwTs) {
-                            recEstimator.updateFromTimestamp(recTs.framePosition, recTs.nanoTime)
-                        } else {
-                            // Fallback su clock sistema se AudioRecord.getTimestamp() non è supportato dall'HAL
-                            recEstimator.updateFromTimestamp(totalRecSamples + read, SystemClock.elapsedRealtimeNanos())
-                        }
+                        // Usiamo direttamente (totalRecSamples + read, elapsedRealtimeNanos) così l'asse
+                        // dell'indice campione di captureRing coincide esattamente con TIMEBASE_BOOTTIME.
+                        recEstimator.updateFromTimestamp(totalRecSamples + read, SystemClock.elapsedRealtimeNanos())
                         for (i in 0 until read) {
                             captureRing[((totalRecSamples + i) % captureRing.size).toInt()] = tmp[i]
                         }
