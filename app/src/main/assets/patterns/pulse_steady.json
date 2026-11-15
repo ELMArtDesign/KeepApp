@@ -1,0 +1,73 @@
+{
+  "id": "pulse_steady",
+  "name": "Corsa Regolare 4/4",
+  "description": "Pattern lineare ad alta chiarezza per conduzione ossea, ideale per mantenere cadenza costante.",
+  "beatsPerBar": 4,
+  "subdivisionsPerBeat": 4,
+  "levels": [
+    {
+      "level": 0,
+      "name": "Defaticamento",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 0.78, "accent": true },
+        { "step": 4, "instrument": "kick", "velocity": 0.65, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.72, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.65, "accent": false }
+      ]
+    },
+    {
+      "level": 1,
+      "name": "Base",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 0.90, "accent": true },
+        { "step": 2, "instrument": "hihat", "velocity": 0.42, "accent": false },
+        { "step": 4, "instrument": "kick", "velocity": 0.78, "accent": false },
+        { "step": 4, "instrument": "snare", "velocity": 0.55, "accent": false },
+        { "step": 6, "instrument": "hihat", "velocity": 0.42, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.85, "accent": false },
+        { "step": 10, "instrument": "hihat", "velocity": 0.42, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.78, "accent": false },
+        { "step": 12, "instrument": "snare", "velocity": 0.55, "accent": false },
+        { "step": 14, "instrument": "hihat", "velocity": 0.42, "accent": false }
+      ]
+    },
+    {
+      "level": 2,
+      "name": "Spinta",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 0.95, "accent": true },
+        { "step": 0, "instrument": "hihat", "velocity": 0.50, "accent": false },
+        { "step": 2, "instrument": "hihat", "velocity": 0.55, "accent": false },
+        { "step": 4, "instrument": "kick", "velocity": 0.85, "accent": false },
+        { "step": 4, "instrument": "snare", "velocity": 0.78, "accent": false },
+        { "step": 6, "instrument": "hihat", "velocity": 0.55, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.92, "accent": false },
+        { "step": 8, "instrument": "hihat", "velocity": 0.50, "accent": false },
+        { "step": 10, "instrument": "hihat", "velocity": 0.55, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.85, "accent": false },
+        { "step": 12, "instrument": "snare", "velocity": 0.80, "accent": false },
+        { "step": 14, "instrument": "hihat", "velocity": 0.60, "accent": false },
+        { "step": 15, "instrument": "hihat", "velocity": 0.45, "accent": false }
+      ]
+    },
+    {
+      "level": 3,
+      "name": "Rinforzo",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 1.00, "accent": true },
+        { "step": 0, "instrument": "accent", "velocity": 0.85, "accent": true },
+        { "step": 2, "instrument": "hihat", "velocity": 0.62, "accent": false },
+        { "step": 4, "instrument": "kick", "velocity": 0.92, "accent": false },
+        { "step": 4, "instrument": "snare", "velocity": 0.88, "accent": false },
+        { "step": 6, "instrument": "hihat", "velocity": 0.62, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.98, "accent": true },
+        { "step": 8, "instrument": "accent", "velocity": 0.65, "accent": false },
+        { "step": 10, "instrument": "hihat", "velocity": 0.62, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.92, "accent": false },
+        { "step": 12, "instrument": "snare", "velocity": 0.90, "accent": false },
+        { "step": 14, "instrument": "hihat", "velocity": 0.68, "accent": false },
+        { "step": 15, "instrument": "snare", "velocity": 0.52, "accent": false }
+      ]
+    }
+  ]
+}

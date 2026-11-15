@@ -1,0 +1,69 @@
+{
+  "id": "tribal_stride",
+  "name": "Passo Tribale 4/4",
+  "description": "Ritmo percussivo caldo con accenti marcati su ogni appoggio e controtempi netti.",
+  "beatsPerBar": 4,
+  "subdivisionsPerBeat": 4,
+  "levels": [
+    {
+      "level": 0,
+      "name": "Defaticamento",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 0.82, "accent": true },
+        { "step": 4, "instrument": "kick", "velocity": 0.72, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.78, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.72, "accent": false }
+      ]
+    },
+    {
+      "level": 1,
+      "name": "Base",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 0.92, "accent": true },
+        { "step": 2, "instrument": "snare", "velocity": 0.42, "accent": false },
+        { "step": 4, "instrument": "kick", "velocity": 0.82, "accent": false },
+        { "step": 6, "instrument": "hihat", "velocity": 0.48, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.88, "accent": false },
+        { "step": 10, "instrument": "snare", "velocity": 0.42, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.82, "accent": false },
+        { "step": 14, "instrument": "hihat", "velocity": 0.48, "accent": false }
+      ]
+    },
+    {
+      "level": 2,
+      "name": "Spinta",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 0.96, "accent": true },
+        { "step": 0, "instrument": "accent", "velocity": 0.55, "accent": false },
+        { "step": 2, "instrument": "snare", "velocity": 0.55, "accent": false },
+        { "step": 4, "instrument": "kick", "velocity": 0.88, "accent": false },
+        { "step": 6, "instrument": "hihat", "velocity": 0.58, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.92, "accent": false },
+        { "step": 10, "instrument": "snare", "velocity": 0.58, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.88, "accent": false },
+        { "step": 12, "instrument": "snare", "velocity": 0.72, "accent": false },
+        { "step": 14, "instrument": "hihat", "velocity": 0.58, "accent": false }
+      ]
+    },
+    {
+      "level": 3,
+      "name": "Rinforzo",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 1.00, "accent": true },
+        { "step": 0, "instrument": "accent", "velocity": 0.90, "accent": true },
+        { "step": 2, "instrument": "snare", "velocity": 0.65, "accent": false },
+        { "step": 3, "instrument": "hihat", "velocity": 0.55, "accent": false },
+        { "step": 4, "instrument": "kick", "velocity": 0.94, "accent": false },
+        { "step": 4, "instrument": "snare", "velocity": 0.80, "accent": false },
+        { "step": 6, "instrument": "hihat", "velocity": 0.65, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.98, "accent": true },
+        { "step": 8, "instrument": "accent", "velocity": 0.70, "accent": false },
+        { "step": 10, "instrument": "snare", "velocity": 0.68, "accent": false },
+        { "step": 11, "instrument": "hihat", "velocity": 0.55, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.94, "accent": false },
+        { "step": 12, "instrument": "snare", "velocity": 0.86, "accent": false },
+        { "step": 14, "instrument": "hihat", "velocity": 0.68, "accent": false }
+      ]
+    }
+  ]
+}

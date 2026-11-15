@@ -1,0 +1,71 @@
+{
+  "id": "cadence_drive",
+  "name": "Spinta Ritmica 4/4",
+  "description": "Groove propulsivo con raddoppi in levare e accenti sul primo e terzo quarto.",
+  "beatsPerBar": 4,
+  "subdivisionsPerBeat": 4,
+  "levels": [
+    {
+      "level": 0,
+      "name": "Defaticamento",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 0.80, "accent": true },
+        { "step": 4, "instrument": "hihat", "velocity": 0.45, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.75, "accent": false },
+        { "step": 12, "instrument": "hihat", "velocity": 0.45, "accent": false }
+      ]
+    },
+    {
+      "level": 1,
+      "name": "Base",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 0.92, "accent": true },
+        { "step": 3, "instrument": "hihat", "velocity": 0.40, "accent": false },
+        { "step": 4, "instrument": "kick", "velocity": 0.80, "accent": false },
+        { "step": 4, "instrument": "snare", "velocity": 0.65, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.88, "accent": false },
+        { "step": 10, "instrument": "kick", "velocity": 0.58, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.80, "accent": false },
+        { "step": 12, "instrument": "snare", "velocity": 0.68, "accent": false }
+      ]
+    },
+    {
+      "level": 2,
+      "name": "Spinta",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 0.96, "accent": true },
+        { "step": 2, "instrument": "hihat", "velocity": 0.52, "accent": false },
+        { "step": 4, "instrument": "kick", "velocity": 0.86, "accent": false },
+        { "step": 4, "instrument": "snare", "velocity": 0.82, "accent": false },
+        { "step": 6, "instrument": "hihat", "velocity": 0.52, "accent": false },
+        { "step": 7, "instrument": "snare", "velocity": 0.45, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.92, "accent": false },
+        { "step": 10, "instrument": "kick", "velocity": 0.65, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.86, "accent": false },
+        { "step": 12, "instrument": "snare", "velocity": 0.84, "accent": false },
+        { "step": 14, "instrument": "hihat", "velocity": 0.58, "accent": false }
+      ]
+    },
+    {
+      "level": 3,
+      "name": "Rinforzo",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 1.00, "accent": true },
+        { "step": 0, "instrument": "accent", "velocity": 0.88, "accent": true },
+        { "step": 2, "instrument": "hihat", "velocity": 0.60, "accent": false },
+        { "step": 3, "instrument": "kick", "velocity": 0.58, "accent": false },
+        { "step": 4, "instrument": "kick", "velocity": 0.92, "accent": false },
+        { "step": 4, "instrument": "snare", "velocity": 0.90, "accent": false },
+        { "step": 6, "instrument": "hihat", "velocity": 0.60, "accent": false },
+        { "step": 7, "instrument": "snare", "velocity": 0.50, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.96, "accent": true },
+        { "step": 8, "instrument": "accent", "velocity": 0.65, "accent": false },
+        { "step": 10, "instrument": "kick", "velocity": 0.72, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.92, "accent": false },
+        { "step": 12, "instrument": "snare", "velocity": 0.92, "accent": false },
+        { "step": 14, "instrument": "hihat", "velocity": 0.66, "accent": false },
+        { "step": 15, "instrument": "snare", "velocity": 0.58, "accent": false }
+      ]
+    }
+  ]
+}
