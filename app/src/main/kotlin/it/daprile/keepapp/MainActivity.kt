@@ -403,6 +403,7 @@ private fun LiveSessionTab(
                 val stateLabel = when {
                     !liveState.isActive -> "INATTIVA"
                     liveState.runState == SessionRunState.PAUSED -> "IN PAUSA (1 click cuffia per riprendere)"
+                    liveState.targetBpm < 60f -> "IN ATTESA PRIMI PASSI..."
                     liveState.runState == SessionRunState.ACTIVE_STOPPED -> "SOSTA RILEVATA (-20 dB)"
                     else -> "IN CORSA (${liveState.anchorState.name})"
                 }

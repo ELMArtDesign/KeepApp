@@ -150,6 +150,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
     private var lastGpsSpeedMps: Float = 0f
 
     private var isStarted = false
+    private var hasInitialCadenceLock = false
     private var lastNotificationUpdateMs = 0L
 
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
@@ -259,6 +260,8 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         requestAudioFocus()
         setupMediaSession()
 
+        hasInitialCadenceLock = false
+        engine.setMuted(true)
         engine.setBpm(155f)
         engine.start()
 
@@ -386,30 +389,37 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
     private fun applySnapshotToAudioAndUi(snapshot: SessionFrameSnapshot) {
         val engine = audioEngine ?: return
 
+        if (!hasInitialCadenceLock && snapshot.cadenceEstimate.cadenceSpm >= config.minCadenceSpm) {
+            hasInitialCadenceLock = true
+            engine.setBpm(snapshot.cadenceEstimate.cadenceSpm)
+        }
+
         val effectiveBpm = when {
             snapshot.anchorSnapshot.targetBpm >= config.minCadenceSpm -> snapshot.anchorSnapshot.targetBpm
             snapshot.cadenceEstimate.cadenceSpm >= config.minCadenceSpm -> snapshot.cadenceEstimate.cadenceSpm
-            else -> 155f
+            else -> 0f
         }
 
         val posOffsetMs = config.phaseOffsetMsFor(snapshot.positionEstimate.position)
-        engine.updateSyncTargets(
-            bpm = effectiveBpm,
-            predictedNextFootstrikeNs = snapshot.phaseState.predictedNextFootstrikeNs,
-            phaseConfidence = snapshot.phaseState.phaseConfidence,
-            btLatencyMs = appliedBtLatencyMs,
-            positionOffsetMs = posOffsetMs
-        )
+        if (effectiveBpm >= config.minCadenceSpm) {
+            engine.updateSyncTargets(
+                bpm = effectiveBpm,
+                predictedNextFootstrikeNs = snapshot.phaseState.predictedNextFootstrikeNs,
+                phaseConfidence = snapshot.phaseState.phaseConfidence,
+                btLatencyMs = appliedBtLatencyMs,
+                positionOffsetMs = posOffsetMs
+            )
+        }
 
-        when (snapshot.runState) {
-            SessionRunState.PAUSED -> {
+        when {
+            !hasInitialCadenceLock || snapshot.runState == SessionRunState.PAUSED -> {
                 engine.setMuted(true)
             }
-            SessionRunState.ACTIVE_STOPPED -> {
+            snapshot.runState == SessionRunState.ACTIVE_STOPPED -> {
                 engine.setMuted(false)
                 engine.setAttenuated(true) // -20 dB in sosta (semaforo/incrocio)
             }
-            SessionRunState.ACTIVE_RUNNING -> {
+            else -> {
                 engine.setMuted(false)
                 engine.setAttenuated(false)
             }
