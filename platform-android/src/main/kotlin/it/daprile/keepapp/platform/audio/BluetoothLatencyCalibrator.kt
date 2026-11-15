@@ -274,31 +274,31 @@ class BluetoothLatencyCalibrator(
                         )
                     }
 
-                    // Dopo 850 ms dall'emissione dell'impulso (oltre il buffer AudioTrack + 650 ms di finestra)
+                    // Dopo 850 ms dall'emissione dell'impulso analizziamo la finestra catturata dal microfono
                     if (!analyzedThisImpulse && c == 85) {
                         analyzedThisImpulse = true
                         val trackOutNs = trackEstimator.outputTimeNsForSample(impulseStartSample)
-                        val recStartSample = trackOutNs?.let { recEstimator.sampleIndexForOutputTimeNs(it) }
-                        if (trackOutNs != null && recStartSample != null && totalRecSamples >= recStartSample + captureWindowSamples) {
-                            for (i in 0 until captureWindowSamples) {
-                                val sIdx = recStartSample + i
-                                val sampleVal = if (sIdx >= 0L) {
-                                    captureRing[(sIdx % captureRing.size).toInt()]
-                                } else {
-                                    0
+                        if (trackOutNs != null) {
+                            val nowBootNs = SystemClock.elapsedRealtimeNanos()
+                            val elapsedSinceOutSamples = (((nowBootNs - trackOutNs).toDouble() / 1_000_000_000.0) * sampleRateHz).toLong()
+                            val recStartSample = max(0L, totalRecSamples - elapsedSinceOutSamples)
+                            val availableSamples = (totalRecSamples - recStartSample).toInt().coerceIn(0, captureWindowSamples)
+                            if (availableSamples >= sampleRateHz / 4) {
+                                for (i in 0 until availableSamples) {
+                                    val sIdx = recStartSample + i
+                                    val sampleVal = captureRing[(sIdx % captureRing.size).toInt()]
+                                    analyzeWindowBuf[i] = sampleVal
+                                    val absVal = kotlin.math.abs(sampleVal.toInt())
+                                    if (absVal > maxObservedPeak) maxObservedPeak = absVal
                                 }
-                                analyzeWindowBuf[i] = sampleVal
-                                val absVal = kotlin.math.abs(sampleVal.toInt())
-                                if (absVal > maxObservedPeak) maxObservedPeak = absVal
-                            }
-                            val onsetOffset = BluetoothCalibrationMath.detectImpulseOnsetSample(
-                                pcmWindow = analyzeWindowBuf,
-                                noiseFloorRms = noiseFloor
-                            )
-                            if (onsetOffset != null) {
-                                val micOnsetNs = recEstimator.outputTimeNsForSample(recStartSample + onsetOffset)
-                                if (micOnsetNs != null) {
-                                    val latMs = ((micOnsetNs - trackOutNs).toDouble() / 1_000_000.0).toFloat()
+                                val onsetOffset = BluetoothCalibrationMath.detectImpulseOnsetSample(
+                                    pcmWindow = analyzeWindowBuf,
+                                    startIdx = 0,
+                                    endIdxExclusive = availableSamples,
+                                    noiseFloorRms = noiseFloor
+                                )
+                                if (onsetOffset != null) {
+                                    val latMs = ((onsetOffset.toDouble() / sampleRateHz.toDouble()) * 1000.0).toFloat()
                                     if (latMs in 0f..650f) {
                                         measuredMs.add(latMs)
                                     }
