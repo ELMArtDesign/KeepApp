@@ -49,6 +49,11 @@
             </intent-filter>
         </activity>
 
+        <service
+            android:name="it.daprile.keepapp.platform.session.KeepAppSessionService"
+            android:exported="false"
+            android:foregroundServiceType="location|mediaPlayback" />
+
     </application>
 
 </manifest>

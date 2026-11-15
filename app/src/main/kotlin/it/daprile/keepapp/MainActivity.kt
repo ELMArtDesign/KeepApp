@@ -11,7 +11,9 @@
 package it.daprile.keepapp
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -59,39 +61,37 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import it.daprile.keepapp.audio.PatternRepository
 import it.daprile.keepapp.core.audio.AudioMode
 import it.daprile.keepapp.core.audio.CalibrationMethod
-import it.daprile.keepapp.core.rhythm.DrumInstrument
-import it.daprile.keepapp.core.rhythm.PatternHit
-import it.daprile.keepapp.core.rhythm.RhythmLevel
 import it.daprile.keepapp.core.rhythm.RhythmPattern
+import it.daprile.keepapp.core.session.SessionRunState
 import it.daprile.keepapp.platform.audio.AudioEngineTelemetry
 import it.daprile.keepapp.platform.audio.BluetoothLatencyCalibrator
 import it.daprile.keepapp.platform.audio.BtLatencyProfileStore
-import it.daprile.keepapp.platform.audio.BtOutputDevice
 import it.daprile.keepapp.platform.audio.CalibrationUiState
 import it.daprile.keepapp.platform.audio.KeepAppAudioEngine
+import it.daprile.keepapp.platform.audio.PatternAssetLoader
 import it.daprile.keepapp.platform.audio.SavedBtLatencyProfile
+import it.daprile.keepapp.platform.session.KeepAppSessionService
+import it.daprile.keepapp.platform.session.LiveSessionUiState
 import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Schermata principale di KeepApp (Fase 1A — M2 AudioEngine + M3 Calibrazione Bluetooth).
+ * Schermata principale di KeepApp (Fase 1A — M4 Sessione Live + M2 AudioEngine + M3 Calibrazione BT).
  */
 class MainActivity : ComponentActivity() {
 
     private lateinit var patterns: List<RhythmPattern>
-    private lateinit var audioEngine: KeepAppAudioEngine
+    private lateinit var manualAudioEngine: KeepAppAudioEngine
     private lateinit var calibrator: BluetoothLatencyCalibrator
     private lateinit var profileStore: BtLatencyProfileStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val loaded = PatternRepository.loadAll(this)
-        patterns = if (loaded.isNotEmpty()) loaded else listOf(fallbackPattern())
-        audioEngine = KeepAppAudioEngine(initialPattern = patterns.first())
+        patterns = PatternAssetLoader.loadAll(this)
+        manualAudioEngine = KeepAppAudioEngine(initialPattern = patterns.first())
         calibrator = BluetoothLatencyCalibrator()
         profileStore = BtLatencyProfileStore(this)
 
@@ -101,35 +101,78 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val telemetry by audioEngine.telemetry.collectAsState()
+                    val liveState by KeepAppSessionService.liveState.collectAsState()
+                    val manualTelemetry by manualAudioEngine.telemetry.collectAsState()
                     val calibState by calibrator.state.collectAsState()
 
                     KeepAppMainScreen(
                         patterns = patterns,
-                        telemetry = telemetry,
+                        liveState = liveState,
+                        manualTelemetry = manualTelemetry,
                         calibState = calibState,
                         profileStore = profileStore,
-                        onToggleRun = {
-                            if (telemetry.isRunning) {
-                                audioEngine.stop()
+                        onToggleLiveSession = {
+                            if (liveState.isActive) {
+                                KeepAppSessionService.stopSession(this)
                             } else {
+                                manualAudioEngine.stop()
                                 calibrator.cancel()
-                                audioEngine.start()
+                                KeepAppSessionService.startSession(this)
                             }
                         },
-                        onSelectMode = { audioEngine.setMode(it) },
-                        onSelectPattern = { audioEngine.setPattern(it) },
-                        onSelectLevel = { audioEngine.setLevel(it) },
-                        onBpmChange = { audioEngine.setBpm(it) },
-                        onVolumeChange = { audioEngine.setVolume(it) },
-                        onMutedChange = { audioEngine.setMuted(it) },
-                        onAttenuatedChange = { audioEngine.setAttenuated(it) },
+                        onToggleLivePause = { KeepAppSessionService.togglePause(this) },
+                        onLiveSelectMode = { mode ->
+                            startService(
+                                Intent(this, KeepAppSessionService::class.java)
+                                    .setAction(KeepAppSessionService.ACTION_SET_MODE)
+                                    .putExtra(KeepAppSessionService.EXTRA_AUDIO_MODE, mode.name)
+                            )
+                        },
+                        onLiveSelectPattern = { pat ->
+                            startService(
+                                Intent(this, KeepAppSessionService::class.java)
+                                    .setAction(KeepAppSessionService.ACTION_SET_PATTERN)
+                                    .putExtra(KeepAppSessionService.EXTRA_PATTERN_ID, pat.id)
+                            )
+                        },
+                        onLiveToggleAutoLevel = { auto ->
+                            startService(
+                                Intent(this, KeepAppSessionService::class.java)
+                                    .setAction(KeepAppSessionService.ACTION_SET_AUTO_LEVEL)
+                                    .putExtra(KeepAppSessionService.EXTRA_AUTO_LEVEL, auto)
+                            )
+                        },
+                        onLiveSelectManualLevel = { lvl ->
+                            startService(
+                                Intent(this, KeepAppSessionService::class.java)
+                                    .setAction(KeepAppSessionService.ACTION_SET_MANUAL_LEVEL)
+                                    .putExtra(KeepAppSessionService.EXTRA_LEVEL_INDEX, lvl)
+                            )
+                        },
+                        onToggleManualRun = {
+                            if (manualTelemetry.isRunning) {
+                                manualAudioEngine.stop()
+                            } else {
+                                KeepAppSessionService.stopSession(this)
+                                calibrator.cancel()
+                                manualAudioEngine.start()
+                            }
+                        },
+                        onSelectMode = { manualAudioEngine.setMode(it) },
+                        onSelectPattern = { manualAudioEngine.setPattern(it) },
+                        onSelectLevel = { manualAudioEngine.setLevel(it) },
+                        onBpmChange = { manualAudioEngine.setBpm(it) },
+                        onVolumeChange = { manualAudioEngine.setVolume(it) },
+                        onMutedChange = { manualAudioEngine.setMuted(it) },
+                        onAttenuatedChange = { manualAudioEngine.setAttenuated(it) },
                         onStartContactCalibration = {
-                            audioEngine.stop()
+                            KeepAppSessionService.stopSession(this)
+                            manualAudioEngine.stop()
                             calibrator.startContactImpulseCalibration()
                         },
                         onStartTapCalibration = {
-                            audioEngine.stop()
+                            KeepAppSessionService.stopSession(this)
+                            manualAudioEngine.stop()
                             calibrator.startTapToBeatCalibration()
                         },
                         onUserTap = { calibrator.registerUserTap() },
@@ -142,38 +185,25 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         calibrator.cancel()
-        audioEngine.stop()
+        manualAudioEngine.stop()
         super.onDestroy()
     }
-
-    private fun fallbackPattern(): RhythmPattern = RhythmPattern(
-        id = "fallback",
-        name = "Base 4/4",
-        description = "Pattern di emergenza",
-        beatsPerBar = 4,
-        subdivisionsPerBeat = 4,
-        levels = listOf(
-            RhythmLevel(
-                levelIndex = 1,
-                name = "Base",
-                hits = listOf(
-                    PatternHit(0, DrumInstrument.KICK, 0.9f),
-                    PatternHit(4, DrumInstrument.KICK, 0.8f),
-                    PatternHit(8, DrumInstrument.KICK, 0.85f),
-                    PatternHit(12, DrumInstrument.KICK, 0.8f)
-                )
-            )
-        )
-    )
 }
 
 @Composable
 private fun KeepAppMainScreen(
     patterns: List<RhythmPattern>,
-    telemetry: AudioEngineTelemetry,
+    liveState: LiveSessionUiState,
+    manualTelemetry: AudioEngineTelemetry,
     calibState: CalibrationUiState,
     profileStore: BtLatencyProfileStore,
-    onToggleRun: () -> Unit,
+    onToggleLiveSession: () -> Unit,
+    onToggleLivePause: () -> Unit,
+    onLiveSelectMode: (AudioMode) -> Unit,
+    onLiveSelectPattern: (RhythmPattern) -> Unit,
+    onLiveToggleAutoLevel: (Boolean) -> Unit,
+    onLiveSelectManualLevel: (Int) -> Unit,
+    onToggleManualRun: () -> Unit,
     onSelectMode: (AudioMode) -> Unit,
     onSelectPattern: (RhythmPattern) -> Unit,
     onSelectLevel: (Int) -> Unit,
@@ -186,7 +216,45 @@ private fun KeepAppMainScreen(
     onUserTap: () -> Unit,
     onCancelCalibration: () -> Unit
 ) {
+    val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
+
+    val sessionPermsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        onToggleLiveSession()
+    }
+
+    fun requestPermsAndToggleLive() {
+        if (liveState.isActive) {
+            onToggleLiveSession()
+            return
+        }
+        val needed = buildList {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                add(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                add(Manifest.permission.ACTIVITY_RECOGNITION)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        if (needed.isEmpty()) {
+            onToggleLiveSession()
+        } else {
+            sessionPermsLauncher.launch(needed.toTypedArray())
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -203,20 +271,36 @@ private fun KeepAppMainScreen(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
-                        if (selectedTab == 0) {
-                            Button(
-                                onClick = onToggleRun,
+                        when (selectedTab) {
+                            0 -> Button(
+                                onClick = { requestPermsAndToggleLive() },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp),
-                                colors = if (telemetry.isRunning) {
+                                colors = if (liveState.isActive) {
                                     ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                                 } else {
                                     ButtonDefaults.buttonColors()
                                 }
                             ) {
                                 Text(
-                                    text = if (telemetry.isRunning) "FERMA AUDIO ENGINE" else "AVVIA AUDIO ENGINE",
+                                    text = if (liveState.isActive) "FERMA SESSIONE LIVE" else "AVVIA SESSIONE LIVE",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            1 -> Button(
+                                onClick = onToggleManualRun,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                                colors = if (manualTelemetry.isRunning) {
+                                    ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                } else {
+                                    ButtonDefaults.buttonColors()
+                                }
+                            ) {
+                                Text(
+                                    text = if (manualTelemetry.isRunning) "FERMA AUDIO ENGINE" else "AVVIA AUDIO ENGINE",
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -226,23 +310,38 @@ private fun KeepAppMainScreen(
                         Tab(
                             selected = selectedTab == 0,
                             onClick = { selectedTab = 0 },
-                            text = { Text("Audio M2") }
+                            text = { Text("Live M4") }
                         )
                         Tab(
                             selected = selectedTab == 1,
                             onClick = { selectedTab = 1 },
-                            text = { Text("Calibrazione BT M3") }
+                            text = { Text("Audio M2") }
+                        )
+                        Tab(
+                            selected = selectedTab == 2,
+                            onClick = { selectedTab = 2 },
+                            text = { Text("BT M3") }
                         )
                     }
                 }
             }
         }
     ) { innerPadding ->
-        if (selectedTab == 0) {
-            AudioEngineTab(
+        when (selectedTab) {
+            0 -> LiveSessionTab(
                 modifier = Modifier.padding(innerPadding),
                 patterns = patterns,
-                telemetry = telemetry,
+                liveState = liveState,
+                onTogglePause = onToggleLivePause,
+                onSelectMode = onLiveSelectMode,
+                onSelectPattern = onLiveSelectPattern,
+                onToggleAutoLevel = onLiveToggleAutoLevel,
+                onSelectManualLevel = onLiveSelectManualLevel
+            )
+            1 -> AudioEngineTab(
+                modifier = Modifier.padding(innerPadding),
+                patterns = patterns,
+                telemetry = manualTelemetry,
                 onSelectMode = onSelectMode,
                 onSelectPattern = onSelectPattern,
                 onSelectLevel = onSelectLevel,
@@ -251,8 +350,7 @@ private fun KeepAppMainScreen(
                 onMutedChange = onMutedChange,
                 onAttenuatedChange = onAttenuatedChange
             )
-        } else {
-            BluetoothCalibrationTab(
+            else -> BluetoothCalibrationTab(
                 modifier = Modifier.padding(innerPadding),
                 calibState = calibState,
                 profileStore = profileStore,
@@ -261,6 +359,165 @@ private fun KeepAppMainScreen(
                 onUserTap = onUserTap,
                 onCancelCalibration = onCancelCalibration
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LiveSessionTab(
+    modifier: Modifier = Modifier,
+    patterns: List<RhythmPattern>,
+    liveState: LiveSessionUiState,
+    onTogglePause: () -> Unit,
+    onSelectMode: (AudioMode) -> Unit,
+    onSelectPattern: (RhythmPattern) -> Unit,
+    onToggleAutoLevel: (Boolean) -> Unit,
+    onSelectManualLevel: (Int) -> Unit
+) {
+    var selectedPatternId by remember { mutableStateOf(patterns.first().id) }
+    val activePattern = patterns.find { it.id == selectedPatternId } ?: patterns.first()
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Card stato corsa & ancora elastica
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = if (liveState.isActive) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                }
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val stateLabel = when {
+                    !liveState.isActive -> "INATTIVA"
+                    liveState.runState == SessionRunState.PAUSED -> "IN PAUSA (1 click cuffia per riprendere)"
+                    liveState.runState == SessionRunState.ACTIVE_STOPPED -> "SOSTA RILEVATA (-20 dB)"
+                    else -> "IN CORSA (${liveState.anchorState.name})"
+                }
+                Text("Stato: $stateLabel", fontWeight = FontWeight.Bold)
+                Text(
+                    text = String.format(
+                        Locale.US,
+                        "Cadenza rilevata: %.1f SPM (conf %.0f%%)\nTarget Ancora: %.1f BPM %s\nPosizione: %s  |  Passi: %d\nDurata: %.0f s  |  GPS: %.2f m/s",
+                        liveState.cadenceSpm,
+                        liveState.cadenceConfidence * 100f,
+                        liveState.targetBpm,
+                        if (liveState.reinforcementActive) "[RINFORZO]" else "",
+                        liveState.estimatedPosition.name,
+                        liveState.totalSteps,
+                        liveState.elapsedSeconds,
+                        liveState.gpsSpeedMps
+                    ),
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                if (liveState.isActive) {
+                    OutlinedButton(
+                        onClick = onTogglePause,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            if (liveState.runState == SessionRunState.PAUSED) "Riprendi (o premi tasto cuffia)"
+                            else "Pausa (o premi tasto cuffia)"
+                        )
+                    }
+                }
+            }
+        }
+
+        // Controlli pattern e livello in corsa
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Guida Sonora", fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = liveState.audioTelemetry.mode == AudioMode.RHYTHM_PATTERN,
+                        onClick = { onSelectMode(AudioMode.RHYTHM_PATTERN) },
+                        label = { Text("Pattern Ritmico") }
+                    )
+                    FilterChip(
+                        selected = liveState.audioTelemetry.mode == AudioMode.SIMPLE_METRONOME,
+                        onClick = { onSelectMode(AudioMode.SIMPLE_METRONOME) },
+                        label = { Text("Metronomo") }
+                    )
+                }
+
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    patterns.forEach { pat ->
+                        FilterChip(
+                            selected = selectedPatternId == pat.id,
+                            onClick = {
+                                selectedPatternId = pat.id
+                                onSelectPattern(pat)
+                            },
+                            label = { Text(pat.name) }
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Livello Automatico (da Ancora/Sosta)")
+                    Switch(checked = liveState.autoLevelEnabled, onCheckedChange = onToggleAutoLevel)
+                }
+
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    activePattern.levels.forEach { lvl ->
+                        FilterChip(
+                            selected = liveState.audioTelemetry.activeLevelIndex == lvl.levelIndex,
+                            onClick = { onSelectManualLevel(lvl.levelIndex) },
+                            label = { Text("L${lvl.levelIndex} ${lvl.name}") }
+                        )
+                    }
+                }
+            }
+        }
+
+        // Telemetria Bluetooth & AudioEngine
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text("Sincronizzazione BT & AudioEngine", fontWeight = FontWeight.SemiBold)
+                val pllStatus = if (liveState.audioTelemetry.pllLocked) "AGGANCIO OK" else "In aggancio..."
+                Text(
+                    text = String.format(
+                        Locale.US,
+                        "Cuffie: %s (latenza %.1f ms)\nPLL: %s (err %.3f ms)\nCorrezione fase beat: %+d us\nUnderrun AudioTrack: %d",
+                        liveState.activeDeviceName,
+                        liveState.appliedBtLatencyMs,
+                        pllStatus,
+                        liveState.audioTelemetry.pllResidualRmsMs,
+                        liveState.audioTelemetry.lastPhaseCorrectionUs,
+                        liveState.audioTelemetry.underrunCount
+                    ),
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
     }
 }
@@ -503,7 +760,6 @@ private fun BluetoothCalibrationTab(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Profilo dispositivo attivo
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(14.dp),
@@ -549,7 +805,6 @@ private fun BluetoothCalibrationTab(
             }
         }
 
-        // Controlli calibrazione automatica e interattiva
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(14.dp),
@@ -646,7 +901,6 @@ private fun BluetoothCalibrationTab(
             }
         }
 
-        // Risultato e Salvataggio
         calibState.summary?.let { res ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -690,7 +944,6 @@ private fun BluetoothCalibrationTab(
             }
         }
 
-        // Regolazione manuale di backup
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(14.dp),
