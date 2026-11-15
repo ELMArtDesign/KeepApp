@@ -10,6 +10,7 @@
 
 package it.daprile.keepapp.platform.audio
 
+import android.os.SystemClock
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToLong
@@ -33,6 +34,23 @@ class AudioClockEstimator(
         private const val WINDOW_CAPACITY = 128 // ~3–5 s di timestamp HAL
         private const val MIN_LOCK_SAMPLES = 24
         private const val OUTLIER_THRESHOLD_MS = 20.0
+
+        /**
+         * Converte un timestamp restituito da `AudioTrack.getTimestamp()` (tipicamente `CLOCK_MONOTONIC`)
+         * nella base `TIMEBASE_BOOTTIME` (`SystemClock.elapsedRealtimeNanos()`), rilevando automaticamente
+         * quale clock sta usando l'HAL del dispositivo.
+         */
+        fun normalizeTrackTimestampToBoottimeNs(trackNanoTimeNs: Long): Long {
+            val nowMono = System.nanoTime()
+            val nowBoot = SystemClock.elapsedRealtimeNanos()
+            val diffFromMono = abs(trackNanoTimeNs - nowMono)
+            val diffFromBoot = abs(trackNanoTimeNs - nowBoot)
+            return if (diffFromMono < diffFromBoot) {
+                trackNanoTimeNs + (nowBoot - nowMono)
+            } else {
+                trackNanoTimeNs
+            }
+        }
     }
 
     private val nominalNsPerSample = 1_000_000_000.0 / sampleRateHz.toDouble()

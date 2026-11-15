@@ -252,7 +252,7 @@ class KeepAppAudioEngine(
                 if (track.getTimestamp(audioTimestamp)) {
                     clockEstimator.updateFromTimestamp(
                         framePosition = audioTimestamp.framePosition,
-                        nanoTimeNs = audioTimestamp.nanoTime
+                        nanoTimeNs = AudioClockEstimator.normalizeTrackTimestampToBoottimeNs(audioTimestamp.nanoTime)
                     )
                 }
 
