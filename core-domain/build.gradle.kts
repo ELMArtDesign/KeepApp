@@ -23,7 +23,15 @@ kotlin {
     }
 }
 
+tasks.test {
+    useTestNG()
+}
+
 dependencies {
     // Modulo Kotlin PURO: nessuna dipendenza dal framework Android.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+
+    // Dipendenze di test unitari JVM (100% Apache License 2.0)
+    testImplementation("org.jetbrains.kotlin:kotlin-test-testng:2.2.20")
+    testImplementation("org.testng:testng:7.10.2")
 }

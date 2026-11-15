@@ -22,7 +22,7 @@ import kotlin.math.sqrt
 
 /**
  * Definizione formale dei tipi di record e del serializzatore binario a 32 byte
- * per il file `sensors.bin` (Fase 0).
+ * per il file `sensors.bin` (Fase 0 e Fase 1A — D45).
  *
  * Questo modulo è scritto in Kotlin puro (zero dipendenze Android) per poter essere
  * condiviso e testato su qualsiasi piattaforma.
@@ -31,14 +31,14 @@ object BinaryFormat {
     /** Magic ASCII di 8 byte all'inizio di sensors.bin */
     const val MAGIC_STRING = "KEEPAPP0"
 
-    /** Versione corrente dello schema binario */
-    const val FORMAT_VERSION: Short = 1
+    /** Versione dello schema binario (2 = compatibile col formato 1 + record diagnostici Fase 1A D45) */
+    const val FORMAT_VERSION: Short = 2
 
     /** Dimensione fissa in byte dell'header e di ciascun record */
     const val HEADER_SIZE_BYTES = 32
     const val RECORD_SIZE_BYTES = 32
 
-    // Codici identificativi dei tipi di record (uint8)
+    // Codici identificativi dei tipi di record Fase 0 (uint8: 1..13)
     const val TYPE_ACCEL: Byte = 1
     const val TYPE_GYRO: Byte = 2
     const val TYPE_MAG: Byte = 3
@@ -53,23 +53,40 @@ object BinaryFormat {
     const val TYPE_THERMAL: Byte = 12
     const val TYPE_ROUTE_CHANGE: Byte = 13
 
+    // Codici identificativi dei tipi di record diagnostici Fase 1A (D45 — uint8: 14..18)
+    /** Cadenza stimata (f0=spm, f1=confidenza, f2=stepDetectorSpm, f3=dynamicRms, flags=PhonePosition.index) */
+    const val TYPE_DIAG_CADENCE: Byte = 14
+
+    /** Stato fase e appoggio (q0=nextFootstrikeNs, q1=lastFootstrikeNs, i2=phaseConfidence*1000 o offset) */
+    const val TYPE_DIAG_PHASE: Byte = 15
+
+    /** Stato ed eventi dell'Ancora Elastica (f0=anchorBpm, f1=targetBpm, f2=currentSpm, flags=AnchorState.ordinal, reserved=eventCode) */
+    const val TYPE_DIAG_ANCHOR: Byte = 16
+
+    /** Cambio livello del pattern ritmico (flags=newLevel, reserved=barIndex, f0=targetBpm, f1=gainDb) */
+    const val TYPE_DIAG_RHYTHM_LEVEL: Byte = 17
+
+    /** Colpo principale programmato dal BeatScheduler (q0=sampleIndex, q1=predictedOutputNs, i2=phaseCorrectionUs) */
+    const val TYPE_DIAG_SCHEDULED_BEAT: Byte = 18
+
     /**
      * Genera i 32 byte di intestazione (Header) del file `sensors.bin` in Little-Endian.
      */
     fun createFileHeader(
         flags: Int,
         monotonicStartNs: Long,
-        unixStartMs: Long
+        unixStartMs: Long,
+        version: Short = FORMAT_VERSION
     ): ByteArray {
         val buffer = ByteBuffer.allocate(HEADER_SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
         val magicBytes = MAGIC_STRING.toByteArray(Charsets.US_ASCII)
         require(magicBytes.size == 8) { "Il magic number deve essere di 8 byte ASCII" }
-        buffer.put(magicBytes)                    // 0..7:   "KEEPAPP0"
-        buffer.putShort(FORMAT_VERSION)           // 8..9:   version = 1
+        buffer.put(magicBytes)                       // 0..7:   "KEEPAPP0"
+        buffer.putShort(version)                     // 8..9:   version (1 o 2)
         buffer.putShort(RECORD_SIZE_BYTES.toShort()) // 10..11: record_size = 32
-        buffer.putInt(flags)                      // 12..15: bitmask opzioni
-        buffer.putLong(monotonicStartNs)          // 16..23: elapsedRealtimeNanos iniziale
-        buffer.putLong(unixStartMs)               // 24..31: timestamp Unix UTC in ms
+        buffer.putInt(flags)                         // 12..15: bitmask opzioni
+        buffer.putLong(monotonicStartNs)             // 16..23: elapsedRealtimeNanos iniziale
+        buffer.putLong(unixStartMs)                  // 24..31: timestamp Unix UTC in ms
         return buffer.array()
     }
 }
@@ -189,9 +206,7 @@ class BinaryRecord(val bytes: ByteArray) {
         )
 
         /**
-         * Crea un record con 2 interi a 64 bit (`Long`) e 1 intero a 32 bit (`Int`) nel payload
-         * (usato per `AUDIO_SYNC` e `METRONOME_CLICK` dove i contatori campioni e nanosecondi
-         * richiedono precisione intera a 64 bit).
+         * Crea un record con 2 interi a 64 bit (`Long`) e 1 intero a 32 bit (`Int`) nel payload.
          */
         fun ofTwoLongsAndInt(
             timestampNs: Long,

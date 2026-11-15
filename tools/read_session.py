@@ -252,7 +252,7 @@ def analyze_and_plot(session_dir: Path, output_dir: Path, no_show: bool = False)
         mtype = int(m["flags"])
         keycode = int(m["reserved"])
         presses = int(m["f2"])
-        label = {1: "1x Evento", 2: "2x Incrocio", 3: "UI Pulsante"}.get(mtype, f"Tipo {mtype}")
+        label = {1: "1x Evento", 2: "2x Incrocio", 3: "UI Pulsante", 4: "3x Tocchi / Previous"}.get(mtype, f"Tipo {mtype}")
         print(f"   - MARKER a {mt_s:7.2f} s -> {label} | keyCode={keycode} | pressioni={presses}")
 
     if len(clicks) >= 2:
@@ -269,8 +269,12 @@ def analyze_and_plot(session_dir: Path, output_dir: Path, no_show: bool = False)
     print("=" * 74)
 
     # === GENERAZIONE GRAFICO MULTI-PANNELLO ===
-    fig, axes = plt.subplots(3, 1, figsize=(13, 9), sharex=False)
-    fig.suptitle(f"KeepApp Fase 0 — Sessione: {session_dir.name}", fontsize=13, fontweight="bold")
+    replay_csv_path = session_dir / "replay_output.csv"
+    has_replay_csv = replay_csv_path.exists()
+    num_panels = 4 if has_replay_csv else 3
+
+    fig, axes = plt.subplots(num_panels, 1, figsize=(13, 3.1 * num_panels), sharex=False)
+    fig.suptitle(f"KeepApp Fase 0 / 1A — Sessione: {session_dir.name}", fontsize=13, fontweight="bold")
 
     # Pannello 1: Accelerazione + Filtro Passa-Alto |a| + Marker + Click Metronomo
     ax1 = axes[0]
@@ -332,6 +336,27 @@ def analyze_and_plot(session_dir: Path, output_dir: Path, no_show: bool = False)
     ax3.set_ylabel("Deriva Clock (ms)")
     ax3.grid(True, alpha=0.3)
     ax3.legend(loc="upper right", fontsize=8)
+
+    if has_replay_csv:
+        ax4 = axes[3]
+        try:
+            replay_data = np.genfromtxt(replay_csv_path, delimiter=",", names=True, dtype=None, encoding="utf-8")
+            if replay_data.size > 1:
+                rt = replay_data["time_s"]
+                c_spm = replay_data["cadence_spm"]
+                t_bpm = replay_data["target_bpm"]
+                stopped = replay_data["is_stopped"]
+                ax4.plot(rt, c_spm, color="#1565C0", linewidth=1.4, label="Cadenza Stimata (SPM)")
+                ax4.plot(rt, t_bpm, color="#2E7D32", linestyle="--", linewidth=1.4, label="BPM Obiettivo Ancora Elastica")
+                for idx_s in np.where(stopped == 1)[0]:
+                    ax4.axvspan(rt[idx_s] - 0.25, rt[idx_s] + 0.25, color="#FFCDD2", alpha=0.35)
+        except Exception as exc:
+            print(f"[AVVISO] Impossibile tracciare replay_output.csv: {exc}")
+        ax4.set_title("4. Replay Harness Fase 1A (:replay) — Cadenza, Ancora Elastica e Soste")
+        ax4.set_xlabel("Tempo dall'avvio (s)")
+        ax4.set_ylabel("Passi/min (SPM / BPM)")
+        ax4.grid(True, alpha=0.3)
+        ax4.legend(loc="upper right", fontsize=8)
 
     plt.tight_layout()
     report_png = output_dir / f"report_{session_dir.name}.png"
