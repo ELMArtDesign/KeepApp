@@ -92,7 +92,8 @@ data class LoggerRuntimeState(
     val metronomeBpm: Int = 160,
     val metronomeClicks: Long = 0L,
     val metronomeUnderruns: Int = 0,
-    val metronomeRmsJitterMs: Float = 0f
+    val metronomeRmsJitterMs: Float = 0f,
+    val pureSurvivalMode: Boolean = false
 )
 
 /**
@@ -144,6 +145,9 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
     @Volatile
     private var currentScoState = false
 
+    @Volatile
+    private var currentPureSurvivalMode = false
+
     private var lastAccelHz = 0f
     private var lastGyroHz = 0f
     private var lastMagHz = 0f
@@ -188,6 +192,7 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
                     val enableMic = intent.getBooleanExtra(EXTRA_ENABLE_MIC, true)
                     val enableMetro = intent.getBooleanExtra(EXTRA_ENABLE_METRONOME, false)
                     val metroBpm = intent.getIntExtra(EXTRA_METRONOME_BPM, 160)
+                    val pureSurvival = intent.getBooleanExtra(EXTRA_PURE_SURVIVAL_MODE, false)
 
                     val position = PhonePosition.entries.find { it.code == posCode } ?: PhonePosition.ARM
                     val activityKind = ActivityKind.entries.find { it.code == actCode } ?: ActivityKind.WALK
@@ -197,9 +202,10 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
                             position = position,
                             activityKind = activityKind,
                             headphonesName = headphones,
-                            enableMicrophone = enableMic && hasAudioPermission()
+                            enableMicrophone = enableMic && hasAudioPermission() && !pureSurvival,
+                            pureSurvivalMode = pureSurvival
                         ),
-                        enableMetronome = enableMetro,
+                        enableMetronome = enableMetro && !pureSurvival,
                         initialBpm = metroBpm
                     )
                 }
@@ -241,9 +247,17 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
         enableMetronome: Boolean,
         initialBpm: Int
     ) {
-        val notification = buildNotification("Registrazione sensori, GPS e Audio attiva")
+        currentPureSurvivalMode = config.pureSurvivalMode
+        val notification = buildNotification(
+            if (config.pureSurvivalMode) "Test D33d: Sopravvivenza pura (Zero MediaSession / AudioTrack)"
+            else "Registrazione sensori, GPS e Audio attiva"
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            var fgsType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            var fgsType = if (config.pureSurvivalMode && hasLocationPermission()) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            } else {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            }
             if (hasLocationPermission()) {
                 fgsType = fgsType or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             }
@@ -329,20 +343,25 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
             }
         }
 
-        val mediaController = HeadsetMediaButtonController(this) { flag, keyCode, pressCount, desc ->
-            recordMarkerEvent(
-                markerFlag = flag,
-                rawKeyCode = keyCode,
-                pressCount = pressCount,
-                description = desc
-            )
+        // D33d: Se è attivo "Test sopravvivenza pura", NON creiamo né MediaSession né AudioTrack silenzioso!
+        if (!config.pureSurvivalMode) {
+            val mediaController = HeadsetMediaButtonController(this) { flag, keyCode, pressCount, desc ->
+                recordMarkerEvent(
+                    markerFlag = flag,
+                    rawKeyCode = keyCode,
+                    pressCount = pressCount,
+                    description = desc
+                )
+            }
+            mediaController.start()
+            headsetButtonController = mediaController
+        } else {
+            headsetButtonController = null
         }
-        mediaController.start()
-        headsetButtonController = mediaController
 
         audioManager.registerAudioDeviceCallback(audioDeviceCallback, mainHandler)
 
-        if (config.enableMicrophone && hasAudioPermission()) {
+        if (config.enableMicrophone && hasAudioPermission() && !config.pureSurvivalMode) {
             val wavFile = File(writer.sessionDir, "mic_raw.wav")
             val recorder = MicrophoneWavRecorder(
                 context = this,
@@ -353,8 +372,8 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
             micRecorder = recorder
         }
 
-        // Se richiesto, avvia il metronomo sample-accurate che registra ogni METRONOME_CLICK in sensors.bin
-        if (enableMetronome) {
+        // Se richiesto (e non in modalità sopravvivenza pura), avvia il metronomo sample-accurate
+        if (enableMetronome && !config.pureSurvivalMode) {
             val metro = SampleAccurateMetronome { clickRecord ->
                 writer.enqueue(clickRecord)
             }
@@ -368,13 +387,14 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
         _runtimeState.value = LoggerRuntimeState(
             isRecording = true,
             sessionFolderName = writer.sessionDir.name,
-            micEnabled = config.enableMicrophone,
+            micEnabled = config.enableMicrophone && !config.pureSurvivalMode,
             activeOutputSummary = currentOutputRouteSummary,
             isA2dpActive = currentA2dpState,
             isScoActive = currentScoState,
             routeChangeCount = totalRouteChanges.get(),
-            metronomeEnabled = enableMetronome,
-            metronomeBpm = initialBpm
+            metronomeEnabled = enableMetronome && !config.pureSurvivalMode,
+            metronomeBpm = initialBpm,
+            pureSurvivalMode = config.pureSurvivalMode
         )
 
         mainHandler.postDelayed(tickerRunnable, 1_000L)
@@ -483,7 +503,8 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
             metronomeBpm = metroTel?.bpm ?: 160,
             metronomeClicks = metroTel?.clicksEmitted ?: 0L,
             metronomeUnderruns = metroTel?.underrunCount ?: 0,
-            metronomeRmsJitterMs = metroTel?.rmsJitterMs ?: 0f
+            metronomeRmsJitterMs = metroTel?.rmsJitterMs ?: 0f,
+            pureSurvivalMode = currentPureSurvivalMode
         )
     }
 
@@ -794,6 +815,7 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
         const val EXTRA_ENABLE_MIC = "extra_enable_mic"
         const val EXTRA_ENABLE_METRONOME = "extra_enable_metronome"
         const val EXTRA_METRONOME_BPM = "extra_metronome_bpm"
+        const val EXTRA_PURE_SURVIVAL_MODE = "extra_pure_survival_mode"
         const val EXTRA_MARKER_TYPE = "extra_marker_type"
 
         private val _runtimeState = MutableStateFlow(LoggerRuntimeState())

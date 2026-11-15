@@ -8,11 +8,12 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 
-package it.daprile.keepapp.logger.data
+package it.daprile.keepapp.platform.storage
 
 import it.daprile.keepapp.core.format.BinaryFormat
 import it.daprile.keepapp.core.format.BinaryRecord
 import it.daprile.keepapp.core.format.SessionConfig
+import it.daprile.keepapp.platform.info.DeviceSnapshot
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedOutputStream
@@ -27,22 +28,18 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Scrittore asincrono su thread dedicato per una sessione di registrazione (F3).
- *
- * Regole architetturali rispettate:
- * - Nessuna operazione di I/O avviene mai sul thread principale (UI) né sul thread dei sensori.
- * - I thread produttori inseriscono i record da 32 byte in una coda non bloccante (`offer`).
- * - Un singolo thread dedicato (`KeepApp-FileWriter`) drena la coda e scrive su disco tramite
- *   `BufferedOutputStream` (buffer da 64 KB) eseguendo flush periodici.
+ * Scrittore asincrono condiviso in `:platform-android` per `sensors.bin` e `manifest.json`
+ * (usato sia da `:logger` in Fase 0 sia da `:app` nelle build Debug in Fase 1A — D45).
  */
 class SessionFileWriter(
     sessionsRootDir: File,
     private val config: SessionConfig,
     private val deviceSnapshot: DeviceSnapshot,
     private val monotonicStartNs: Long,
-    private val unixStartMs: Long
+    private val unixStartMs: Long,
+    private val appId: String = "it.daprile.keepapp.logger",
+    private val milestoneTag: String = "Phase1A-M0"
 ) {
-    /** Cartella dedicata della sessione: `session_YYYYMMDD_HHMMSS_<pos>` */
     val sessionDir: File
 
     private val sensorsBinFile: File
@@ -52,13 +49,9 @@ class SessionFileWriter(
     private val running = AtomicBoolean(false)
     private var writerThread: Thread? = null
 
-    /** Conteggio totale dei record scritti su disco */
     val recordsWrittenCount = AtomicLong(0L)
-
-    /** Conteggio di eventuali record scartati se la coda fosse piena */
     val droppedRecordsCount = AtomicLong(0L)
 
-    // Verifica allineamento base temporale SensorEvent.timestamp vs elapsedRealtimeNanos
     @Volatile
     private var clockVerificationDone = false
 
@@ -71,7 +64,8 @@ class SessionFileWriter(
     init {
         val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
         val timestampStr = sdf.format(Date(unixStartMs))
-        val folderName = "session_${timestampStr}_${config.position.code}"
+        val suffix = if (config.pureSurvivalMode) "${config.position.code}_puresurvival" else config.position.code
+        val folderName = "session_${timestampStr}_${suffix}"
         sessionDir = File(sessionsRootDir, folderName)
         if (!sessionDir.exists()) {
             sessionDir.mkdirs()
@@ -80,20 +74,16 @@ class SessionFileWriter(
         manifestJsonFile = File(sessionDir, "manifest.json")
     }
 
-    /**
-     * Avvia il thread dedicato di scrittura e scrive subito l'header di `sensors.bin`
-     * e la prima versione di `manifest.json`.
-     */
     fun start() {
         if (!running.compareAndSet(false, true)) return
 
-        // Scrittura iniziale del manifest (così esiste anche in caso di spegnimento improvviso)
         writeManifestJson(sessionEndedNs = null)
 
         writerThread = Thread({
             var flags = 0
             if (deviceSnapshot.hasBarometer) flags = flags or 1
             if (config.enableMicrophone) flags = flags or 2
+            if (config.pureSurvivalMode) flags = flags or 4
 
             val headerBytes = BinaryFormat.createFileHeader(
                 flags = flags,
@@ -113,7 +103,6 @@ class SessionFileWriter(
                         bos.write(firstRecord.bytes)
                         var count = 1L
 
-                        // Drena fino a 512 record consecutivi in un unico ciclo per efficienza
                         var next = queue.poll()
                         while (next != null && count < 512) {
                             bos.write(next.bytes)
@@ -138,9 +127,6 @@ class SessionFileWriter(
         }
     }
 
-    /**
-     * Accoda un record da 32 byte senza bloccare il chiamante.
-     */
     fun enqueue(record: BinaryRecord) {
         if (!running.get()) return
         if (!queue.offer(record)) {
@@ -148,10 +134,6 @@ class SessionFileWriter(
         }
     }
 
-    /**
-     * Registra il confronto tra il primo `SensorEvent.timestamp` ricevuto e `elapsedRealtimeNanos()`.
-     * Se la differenza è inferiore a 5 secondi, condividono la stessa base temporale (`CLOCK_BOOTTIME`).
-     */
     fun recordSensorClockCheck(firstSensorTimestampNs: Long, currentElapsedRealtimeNs: Long) {
         if (clockVerificationDone) return
         val diffNs = firstSensorTimestampNs - currentElapsedRealtimeNs
@@ -161,10 +143,6 @@ class SessionFileWriter(
         clockVerificationDone = true
     }
 
-    /**
-     * Ferma lo scrittore, attende lo svuotamento completo della coda su disco e aggiorna `manifest.json`
-     * con le statistiche finali della sessione.
-     */
     fun stopAndClose(sessionEndedNs: Long) {
         if (!running.compareAndSet(true, false)) return
         try {
@@ -181,8 +159,8 @@ class SessionFileWriter(
                 put("format_magic", BinaryFormat.MAGIC_STRING)
                 put("format_version", BinaryFormat.FORMAT_VERSION.toInt())
                 put("record_size_bytes", BinaryFormat.RECORD_SIZE_BYTES)
-                put("app_id", "it.daprile.keepapp.logger")
-                put("milestone", "M1")
+                put("app_id", appId)
+                put("milestone", milestoneTag)
 
                 put("session_folder", sessionDir.name)
                 put("position_code", config.position.code)
@@ -191,6 +169,7 @@ class SessionFileWriter(
                 put("activity_label", config.activityKind.labelIt)
                 put("headphones_name", config.headphonesName)
                 put("microphone_enabled", config.enableMicrophone)
+                put("pure_survival_mode", config.pureSurvivalMode)
 
                 put("unix_start_ms", unixStartMs)
                 put("monotonic_start_ns", monotonicStartNs)
@@ -253,14 +232,10 @@ class SessionFileWriter(
 
             manifestJsonFile.writeText(root.toString(2), Charsets.UTF_8)
         } catch (_: Exception) {
-            // Ignora errori non fatali di scrittura JSON
         }
     }
 
     companion object {
-        /**
-         * Restituisce la directory radice dove vengono salvate tutte le sessioni locali.
-         */
         fun getSessionsRootDir(filesDir: File): File {
             val dir = File(filesDir, "sessions")
             if (!dir.exists()) {

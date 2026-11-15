@@ -29,4 +29,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "KeepApp"
 include(":core-domain")
+include(":platform-android")
+include(":logger")
 include(":app")
+include(":replay")

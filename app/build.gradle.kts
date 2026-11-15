@@ -14,17 +14,16 @@ plugins {
 }
 
 android {
-    namespace = "it.daprile.keepapp.logger"
+    namespace = "it.daprile.keepapp"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "it.daprile.keepapp.logger"
+        applicationId = "it.daprile.keepapp"
         minSdk = 26
-        // A novembre 2026 il requisito ufficiale di Google Play (in vigore da fine agosto 2026)
-        // è targetSdk = 36 (Android 16).
+        // targetSdk = 36 (Android 16), requisito Google Play a novembre 2026
         targetSdk = 36
         versionCode = 1
-        versionName = "0.4.0-phase0-m4"
+        versionName = "0.1.0-phase1a"
     }
 
     buildTypes {
@@ -44,11 +43,14 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
 dependencies {
+    // VINCOLO FASE 1A: Zero Media3, Zero INTERNET, solo ritmi sintetizzati dall'app (A9)
     implementation(project(":core-domain"))
+    implementation(project(":platform-android"))
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
@@ -61,10 +63,6 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-
-    // AndroidX Media3 / ExoPlayer (Apache 2.0) per F7 (velocità variabile e DynamicsProcessing)
-    implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("androidx.media3:media3-common:1.4.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }

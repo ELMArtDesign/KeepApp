@@ -175,14 +175,14 @@ fun KeepAppLoggerRoot() {
                     .padding(top = 12.dp)
             ) {
                 Text(
-                    text = "KeepApp Logger — Fase 0 (M5 Completa)",
+                    text = "KeepApp Logger — Fase 0 / 1A-M0",
                     color = Color.White,
                     fontSize = 19.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
                 Text(
-                    text = "F1–F9 • F10 Esportazione .ZIP in Download / Condivisione",
+                    text = "F1–F10 • Test D33d Sopravvivenza Pura • Mappatura AVRCP D34",
                     color = Color(0xFFB0BEC5),
                     fontSize = 11.sp,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
@@ -888,6 +888,7 @@ fun SessionRecordingScreen() {
     var enableMic by remember { mutableStateOf(true) }
     var enableMetroInSession by remember { mutableStateOf(false) }
     var sessionMetroBpm by remember { mutableFloatStateOf(160f) }
+    var pureSurvivalMode by remember { mutableStateOf(false) }
 
     val sessionsRoot = remember { SessionFileWriter.getSessionsRootDir(context.filesDir) }
     var savedSessions by remember { mutableStateOf(listSavedSessions(sessionsRoot)) }
@@ -1004,6 +1005,14 @@ fun SessionRecordingScreen() {
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
                 )
+                if (runtimeState.pureSurvivalMode) {
+                    Text(
+                        text = "🛡️ MODALITÀ SOPRAVVIVENZA PURA (D33d: Zero MediaSession / Zero AudioTrack)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFE65100)
+                    )
+                }
                 if (runtimeState.metronomeEnabled) {
                     Text(
                         text = String.format(
@@ -1093,11 +1102,40 @@ fun SessionRecordingScreen() {
                         Switch(checked = enableMetroInSession, onCheckedChange = { enableMetroInSession = it })
                     }
 
-                    if (enableMetroInSession) {
+                    if (enableMetroInSession && !pureSurvivalMode) {
                         Slider(
                             value = sessionMetroBpm,
                             onValueChange = { sessionMetroBpm = it },
                             valueRange = 100f..190f
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "5. Test sopravvivenza pura (D33d):",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFE65100)
+                            )
+                            Text(
+                                text = "Disattiva MediaSession, AudioTrack e Microfono (Scenario Spotify)",
+                                fontSize = 12.sp,
+                                color = Color.DarkGray
+                            )
+                        }
+                        Switch(
+                            checked = pureSurvivalMode,
+                            onCheckedChange = {
+                                pureSurvivalMode = it
+                                if (it) {
+                                    enableMic = false
+                                    enableMetroInSession = false
+                                }
+                            }
                         )
                     }
 
@@ -1118,9 +1156,10 @@ fun SessionRecordingScreen() {
                                 putExtra(LoggerForegroundService.EXTRA_POSITION, selectedPosition.code)
                                 putExtra(LoggerForegroundService.EXTRA_ACTIVITY, selectedActivity.code)
                                 putExtra(LoggerForegroundService.EXTRA_HEADPHONES, headphonesName)
-                                putExtra(LoggerForegroundService.EXTRA_ENABLE_MIC, enableMic)
-                                putExtra(LoggerForegroundService.EXTRA_ENABLE_METRONOME, enableMetroInSession)
+                                putExtra(LoggerForegroundService.EXTRA_ENABLE_MIC, enableMic && !pureSurvivalMode)
+                                putExtra(LoggerForegroundService.EXTRA_ENABLE_METRONOME, enableMetroInSession && !pureSurvivalMode)
                                 putExtra(LoggerForegroundService.EXTRA_METRONOME_BPM, sessionMetroBpm.roundToInt())
+                                putExtra(LoggerForegroundService.EXTRA_PURE_SURVIVAL_MODE, pureSurvivalMode)
                             }
                             ContextCompat.startForegroundService(context, startIntent)
                         },

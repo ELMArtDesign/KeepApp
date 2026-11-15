@@ -11,13 +11,21 @@
 package it.daprile.keepapp.core.format
 
 /**
- * Posizione fisica dello smartphone sul corpo durante la sessione di test (D21 / D24).
+ * Posizione fisica dello smartphone sul corpo durante la sessione (D21 / D24).
  */
-enum class PhonePosition(val code: String, val labelIt: String) {
-    ARM("arm", "Braccio (Fascia)"),
-    HAND("hand", "Mano"),
-    WAIST("waist", "Vita (Marsupio)"),
-    POCKET("pocket", "Tasca");
+enum class PhonePosition(val code: String, val labelIt: String, val index: Int) {
+    ARM("arm", "Braccio (Fascia)", 0),
+    HAND("hand", "Mano", 1),
+    WAIST("waist", "Vita (Marsupio)", 2),
+    POCKET("pocket", "Tasca", 3);
+
+    companion object {
+        fun fromCode(code: String?): PhonePosition =
+            entries.find { it.code.equals(code, ignoreCase = true) } ?: ARM
+
+        fun fromIndex(idx: Int): PhonePosition =
+            entries.find { it.index == idx } ?: ARM
+    }
 }
 
 /**
@@ -28,6 +36,11 @@ enum class ActivityKind(val code: String, val labelIt: String) {
     RUN("run", "Corsa"),
     STAND("stand", "Sosta / Fermo"),
     FALL_SIM("fall_sim", "Simulazione Caduta");
+
+    companion object {
+        fun fromCode(code: String?): ActivityKind =
+            entries.find { it.code.equals(code, ignoreCase = true) } ?: WALK
+    }
 }
 
 /**
@@ -59,11 +72,12 @@ data class AudioDeviceDescriptor(
 )
 
 /**
- * Configurazione scelta dall'utente prima di avviare una sessione di registrazione (F2).
+ * Configurazione scelta dall'utente prima di avviare una sessione di registrazione (F2 / D33d).
  */
 data class SessionConfig(
     val position: PhonePosition,
     val activityKind: ActivityKind,
     val headphonesName: String,
-    val enableMicrophone: Boolean = false
+    val enableMicrophone: Boolean = false,
+    val pureSurvivalMode: Boolean = false
 )

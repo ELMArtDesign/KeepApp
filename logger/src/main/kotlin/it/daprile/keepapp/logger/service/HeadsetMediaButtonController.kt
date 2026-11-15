@@ -26,22 +26,15 @@ import android.os.SystemClock
 import android.view.KeyEvent
 
 /**
- * Gestore dei tasti multimediali (AVRCP) delle cuffie Bluetooth (F4 — Milestone 2).
+ * Gestore dei tasti multimediali (AVRCP) delle cuffie Bluetooth (F4 — aggiornato per D34 in M0).
  *
- * Come funziona sulle cuffie Bluetooth (es. Mankiw a conduzione ossea):
- * - Alcune cuffie inviano ad Android ogni singola pressione come `KEYCODE_MEDIA_PLAY_PAUSE` (85),
- *   `KEYCODE_MEDIA_PLAY` (126), `KEYCODE_MEDIA_PAUSE` (127) o `KEYCODE_HEADSETHOOK` (79).
- * - Altre cuffie gestiscono il doppio tocco nel proprio chip interno e inviano direttamente
- *   `KEYCODE_MEDIA_NEXT` (87) o `KEYCODE_MEDIA_PREVIOUS` (88).
- *
- * Questa classe gestisce ENTRAMBI i casi:
- * - Se arriva direttamente `KEYCODE_MEDIA_NEXT` o `KEYCODE_MEDIA_PREVIOUS`, emette subito
- *   un MARKER "Incrocio" (tipo 2) con 2 pressioni equivalenti.
- * - Se arriva Play/Pause/Hook, attende 450 ms per contare se c'è una seconda pressione ravvicinata:
- *   1 pressione = MARKER "Evento" (tipo 1); 2+ pressioni = MARKER "Incrocio" (tipo 2).
- * - Inoltre mantiene attivo un leggerissimo stream `AudioTrack` silenzioso con `USAGE_MEDIA`
- *   affinché Android/HyperOS instradi sempre gli eventi dei tasti AVRCP alla nostra `MediaSession`
- *   anche a schermo spento.
+ * Mappatura D34:
+ * - `79` (`KEYCODE_HEADSETHOOK`), `85` (`KEYCODE_MEDIA_PLAY_PAUSE`),
+ *   `126` (`KEYCODE_MEDIA_PLAY`), `127` (`KEYCODE_MEDIA_PAUSE`) -> "1 tocco" (se singolo entro 450 ms),
+ *   "2 tocchi" (se 2 pressioni entro 450 ms), "3 tocchi" (se 3+ pressioni entro 450 ms).
+ * - `87` (`KEYCODE_MEDIA_NEXT`) -> "2 tocchi" (tradotto in hardware dalla cuffia Bluetooth).
+ * - `88` (`KEYCODE_MEDIA_PREVIOUS`) -> "3 tocchi" (tradotto in hardware dalla cuffia Bluetooth).
+ * - Qualsiasi altro `keyCode` -> registrato fedelmente in `sensors.bin` con il proprio codice intero.
  */
 class HeadsetMediaButtonController(
     private val context: Context,
@@ -59,16 +52,25 @@ class HeadsetMediaButtonController(
     private var pendingPressCount = 0
     private var lastRawKeyCode = 0
 
-    private val commitSingleOrDoubleRunnable = Runnable {
+    private val commitMultiPressRunnable = Runnable {
         val count = pendingPressCount
         val code = lastRawKeyCode
         pendingPressCount = 0
         if (count <= 0) return@Runnable
 
-        val flag: Byte = if (count == 1) 1 else 2 // 1 = Evento, 2 = Incrocio
+        val flag: Byte = when {
+            count == 1 -> 1 // 1 tocco (Evento / Pausa-Ripresa)
+            count == 2 -> 2 // 2 tocchi (Incrocio / Recap)
+            else -> 4       // 3+ tocchi
+        }
+        val label = when (flag.toInt()) {
+            1 -> "1x Tocco (Evento)"
+            2 -> "2x Tocchi (Incrocio)"
+            else -> "${count}x Tocchi"
+        }
         val keyName = KeyEvent.keyCodeToString(code)
-        playFeedbackBeep(isDouble = (flag == 2.toByte()))
-        onMarkerTriggered(flag, code, count, "$keyName ($code) [${if (flag == 1.toByte()) "1x Evento" else "2x Incrocio"}]")
+        playFeedbackBeep(presses = count.coerceIn(1, 3))
+        onMarkerTriggered(flag, code, count, "$keyName ($code) [$label]")
     }
 
     fun start(): MediaSession.Token? {
@@ -138,7 +140,7 @@ class HeadsetMediaButtonController(
     fun stop() {
         if (!running) return
         running = false
-        handler.removeCallbacks(commitSingleOrDoubleRunnable)
+        handler.removeCallbacks(commitMultiPressRunnable)
 
         try {
             mediaSession?.isActive = false
@@ -169,44 +171,61 @@ class HeadsetMediaButtonController(
     }
 
     private fun handleKeyDown(keyCode: Int) {
-        // Se la cuffia traduce già il doppio click in NEXT o PREVIOUS in hardware:
-        if (keyCode == KeyEvent.KEYCODE_MEDIA_NEXT || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
-            handler.removeCallbacks(commitSingleOrDoubleRunnable)
+        val keyName = KeyEvent.keyCodeToString(keyCode)
+
+        // D34: 87 (KEYCODE_MEDIA_NEXT) = 2 tocchi tradotti in hardware dalla cuffia
+        if (keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
+            handler.removeCallbacks(commitMultiPressRunnable)
             pendingPressCount = 0
-            val keyName = KeyEvent.keyCodeToString(keyCode)
-            playFeedbackBeep(isDouble = true)
+            playFeedbackBeep(presses = 2)
             onMarkerTriggered(2, keyCode, 2, "$keyName ($keyCode) [2x Incrocio HW]")
             return
         }
 
-        // Altrimenti accumula le pressioni entro 450 ms per distinguere 1 click da 2 click
-        lastRawKeyCode = keyCode
-        pendingPressCount++
-        handler.removeCallbacks(commitSingleOrDoubleRunnable)
-        if (pendingPressCount >= 2) {
-            // Appena arriva il secondo click, conferma immediatamente "Incrocio"
-            commitSingleOrDoubleRunnable.run()
-        } else {
-            handler.postDelayed(commitSingleOrDoubleRunnable, 450L)
+        // D34: 88 (KEYCODE_MEDIA_PREVIOUS) = 3 tocchi tradotti in hardware dalla cuffia
+        if (keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+            handler.removeCallbacks(commitMultiPressRunnable)
+            pendingPressCount = 0
+            playFeedbackBeep(presses = 3)
+            onMarkerTriggered(4, keyCode, 3, "$keyName ($keyCode) [3x Previous HW]")
+            return
         }
+
+        // D34: 79 (HEADSETHOOK), 85 (PLAY_PAUSE), 126 (PLAY), 127 (PAUSE) = pressione singola o multipla
+        val isSingleTapKey = keyCode == KeyEvent.KEYCODE_HEADSETHOOK ||
+                keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE ||
+                keyCode == KeyEvent.KEYCODE_MEDIA_PLAY ||
+                keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE
+
+        if (isSingleTapKey) {
+            lastRawKeyCode = keyCode
+            pendingPressCount++
+            handler.removeCallbacks(commitMultiPressRunnable)
+            if (pendingPressCount >= 3) {
+                commitMultiPressRunnable.run()
+            } else {
+                handler.postDelayed(commitMultiPressRunnable, 450L)
+            }
+            return
+        }
+
+        // Qualsiasi altro keycode imprevisto viene registrato immediatamente
+        playFeedbackBeep(presses = 1)
+        onMarkerTriggered(8, keyCode, 1, "$keyName ($keyCode) [Altro Tasto]")
     }
 
-    private fun playFeedbackBeep(isDouble: Boolean) {
+    private fun playFeedbackBeep(presses: Int) {
         try {
             val tg = toneGenerator ?: return
-            if (!isDouble) {
-                tg.startTone(ToneGenerator.TONE_PROP_BEEP, 120)
-            } else {
-                tg.startTone(ToneGenerator.TONE_PROP_BEEP2, 220)
+            when (presses) {
+                1 -> tg.startTone(ToneGenerator.TONE_PROP_BEEP, 120)
+                2 -> tg.startTone(ToneGenerator.TONE_PROP_BEEP2, 220)
+                else -> tg.startTone(ToneGenerator.TONE_CDMA_ABBR_ALERT, 260)
             }
         } catch (_: Exception) {
         }
     }
 
-    /**
-     * Mantiene uno stream AudioTrack con zeri (silenzio) attivo affinché Android e MIUI
-     * considerino la nostra MediaSession il player multimediale attivo per i tasti Bluetooth.
-     */
     private fun startSilentAudioKeepAlive() {
         val sampleRate = 16_000
         val minBuf = AudioTrack.getMinBufferSize(
