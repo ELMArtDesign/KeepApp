@@ -220,7 +220,7 @@ class BluetoothLatencyCalibrator(
             track.play()
 
             val silence = ShortArray(CHUNK_FRAMES)
-            val impulse = buildProbeImpulse(sampleRateHz)
+            val impulse = buildProbeImpulse(sampleRateHz, freqHz = 1250.0, durationMs = 22)
             val outChunk = ShortArray(CHUNK_FRAMES)
 
             // 1. Warmup silenzioso di 700 ms per agganciare PLL playback + record e misurare rumore di fondo
@@ -254,6 +254,7 @@ class BluetoothLatencyCalibrator(
             val measuredMs = ArrayList<Float>(CONTACT_IMPULSE_COUNT)
             val periodSamples = (sampleRateHz * CONTACT_PERIOD_MS) / 1000
             val analyzeWindowBuf = ShortArray(captureWindowSamples)
+            var maxObservedPeak = 0
 
             // 2. Emetti 5 impulsi e misura ogni eco
             for (k in 0 until CONTACT_IMPULSE_COUNT) {
@@ -278,19 +279,22 @@ class BluetoothLatencyCalibrator(
                         )
                     }
 
-                    // Dopo ~680 ms dall'emissione dell'impulso analizziamo la finestra catturata dal microfono
-                    if (!analyzedThisImpulse && c == 68) {
+                    // Dopo 850 ms dall'emissione dell'impulso (oltre il buffer AudioTrack + 650 ms di finestra)
+                    if (!analyzedThisImpulse && c == 85) {
                         analyzedThisImpulse = true
                         val trackOutNs = trackEstimator.outputTimeNsForSample(impulseStartSample)
-                        val recStartSample = recEstimator.sampleIndexForOutputTimeNs(trackOutNs ?: 0L)
+                        val recStartSample = trackOutNs?.let { recEstimator.sampleIndexForOutputTimeNs(it) }
                         if (trackOutNs != null && recStartSample != null && totalRecSamples >= recStartSample + captureWindowSamples) {
                             for (i in 0 until captureWindowSamples) {
                                 val sIdx = recStartSample + i
-                                analyzeWindowBuf[i] = if (sIdx >= 0L) {
+                                val sampleVal = if (sIdx >= 0L) {
                                     captureRing[(sIdx % captureRing.size).toInt()]
                                 } else {
                                     0
                                 }
+                                analyzeWindowBuf[i] = sampleVal
+                                val absVal = kotlin.math.abs(sampleVal.toInt())
+                                if (absVal > maxObservedPeak) maxObservedPeak = absVal
                             }
                             val onsetOffset = BluetoothCalibrationMath.detectImpulseOnsetSample(
                                 pcmWindow = analyzeWindowBuf,
@@ -328,7 +332,7 @@ class BluetoothLatencyCalibrator(
                 statusMessage = if (summary != null) {
                     "Calibrazione completata: ${"%.1f".format(summary.medianLatencyMs)} ms (±${"%.1f".format(summary.stdDevMs)} ms)"
                 } else {
-                    "Nessun impulso rilevato (trackPLL=${trackEstimator.sampleCount}, recPLL=${recEstimator.sampleCount}, fondo=${noiseFloor.toInt()}). Avvicina la cuffia al microfono."
+                    "Nessun impulso rilevato (trackPLL=${trackEstimator.sampleCount}, recPLL=${recEstimator.sampleCount}, fondo=${noiseFloor.toInt()}, maxPicco=$maxObservedPeak). Avvicina la cuffia al microfono."
                 }
             )
         } finally {
