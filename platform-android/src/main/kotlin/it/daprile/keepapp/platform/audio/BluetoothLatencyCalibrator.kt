@@ -272,7 +272,10 @@ class BluetoothLatencyCalibrator(
                     val w = track.write(outChunk, 0, CHUNK_FRAMES, AudioTrack.WRITE_BLOCKING)
                     if (w > 0) writtenSamples += w
                     if (track.getTimestamp(trackTs)) {
-                        trackEstimator.updateFromTimestamp(trackTs.framePosition, trackTs.nanoTime)
+                        trackEstimator.updateFromTimestamp(
+                            trackTs.framePosition,
+                            AudioClockEstimator.normalizeTrackTimestampToBoottimeNs(trackTs.nanoTime)
+                        )
                     }
 
                     // Dopo ~680 ms dall'emissione dell'impulso analizziamo la finestra catturata dal microfono
@@ -325,7 +328,7 @@ class BluetoothLatencyCalibrator(
                 statusMessage = if (summary != null) {
                     "Calibrazione completata: ${"%.1f".format(summary.medianLatencyMs)} ms (±${"%.1f".format(summary.stdDevMs)} ms)"
                 } else {
-                    "Nessun impulso rilevato chiaramente. Avvicina di più la cuffia al microfono o alza il volume."
+                    "Nessun impulso rilevato (trackPLL=${trackEstimator.sampleCount}, recPLL=${recEstimator.sampleCount}, fondo=${noiseFloor.toInt()}). Avvicina la cuffia al microfono."
                 }
             )
         } finally {
@@ -390,7 +393,10 @@ class BluetoothLatencyCalibrator(
                     val w = track.write(outChunk, 0, CHUNK_FRAMES, AudioTrack.WRITE_BLOCKING)
                     if (w > 0) writtenSamples += w
                     if (track.getTimestamp(trackTs)) {
-                        trackEstimator.updateFromTimestamp(trackTs.framePosition, trackTs.nanoTime)
+                        trackEstimator.updateFromTimestamp(
+                            trackTs.framePosition,
+                            AudioClockEstimator.normalizeTrackTimestampToBoottimeNs(trackTs.nanoTime)
+                        )
                     }
                 }
                 _state.value = _state.value.copy(
@@ -431,7 +437,7 @@ class BluetoothLatencyCalibrator(
                 statusMessage = if (summary != null) {
                     "Calibrazione Tap completata: ${"%.1f".format(summary.medianLatencyMs)} ms (${summary.validSamples} tap validi)"
                 } else {
-                    "Tap insufficienti o fuori tempo. Riprova seguendo il ritmo."
+                    "Tap insufficienti o fuori tempo (tap=${tapsCopy.size}, beat=${beatOutputTimesNs.size}, trackPLL=${trackEstimator.sampleCount}). Riprova."
                 }
             )
         } finally {
