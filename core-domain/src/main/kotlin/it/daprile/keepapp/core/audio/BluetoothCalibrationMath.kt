@@ -55,8 +55,8 @@ object BluetoothCalibrationMath {
         startIdx: Int = 0,
         endIdxExclusive: Int = pcmWindow.size,
         noiseFloorRms: Float,
-        snrThreshold: Float = 3.8f,
-        minPeakAmplitude: Float = 400f
+        snrThreshold: Float = 2.8f,
+        minPeakAmplitude: Float = 250f
     ): Int? {
         val lo = startIdx.coerceIn(0, pcmWindow.size)
         val hi = endIdxExclusive.coerceIn(lo, pcmWindow.size)

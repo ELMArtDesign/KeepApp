@@ -157,7 +157,13 @@ class BluetoothLatencyCalibrator(
 
         val recorder = try {
             AudioRecord(
-                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                MediaRecorder.AudioSource.UNPROCESSED,
+                sampleRateHz,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                recBufBytes
+            ).takeIf { it.state == AudioRecord.STATE_INITIALIZED } ?: AudioRecord(
+                MediaRecorder.AudioSource.MIC,
                 sampleRateHz,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
@@ -215,7 +221,7 @@ class BluetoothLatencyCalibrator(
             track.play()
 
             val silence = ShortArray(CHUNK_FRAMES)
-            val impulse = buildProbeImpulse(sampleRateHz, freqHz = 1250.0, durationMs = 22)
+            val impulse = buildProbeImpulse(sampleRateHz, freqHz = 1100.0, durationMs = 30)
             val outChunk = ShortArray(CHUNK_FRAMES)
 
             // 1. Warmup silenzioso di 700 ms per agganciare PLL playback + record e misurare rumore di fondo
