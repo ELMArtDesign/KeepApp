@@ -117,8 +117,8 @@ data class KeepAppConfig(
     /** Velocità GPS sotto la quale (insieme a zero passi) si dichiara la sosta (D42: < 0,5 m/s) */
     val stopMaxGpsSpeedMps: Float = 0.5f, // da tarare
 
-    /** Tempo senza passi per entrare in stato di sosta (D42: > 3,0 s) */
-    val stopNoStepTimeoutSeconds: Float = 3.0f, // da tarare
+    /** Tempo senza passi per entrare in stato di sosta (D42: 2,0 s) */
+    val stopNoStepTimeoutSeconds: Float = 2.0f, // da tarare
 
     /** Numero di passi consecutivi richiesti per uscire dalla sosta e riprendere il ritmo (D42: 4 passi) */
     val stopResumeConsecutiveSteps: Int = 4, // da tarare
