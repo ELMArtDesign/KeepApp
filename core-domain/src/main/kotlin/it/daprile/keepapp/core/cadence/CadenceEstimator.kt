@@ -137,13 +137,13 @@ class CadenceEstimator(
         lastStepDetectorSpm = computeStepDetectorSpm(nowNs)
 
         val n = windowSamples.size
-        if (n < (sampleRateHz * 2.4f).toInt()) {
+        if (n < (sampleRateHz * 1.3f).toInt()) {
             lastConfidence = 0f
             return
         }
 
         val spanNs = windowSamples.last().timestampNs - windowSamples.first().timestampNs
-        if (spanNs <= 1_500_000_000L) {
+        if (spanNs <= 1_000_000_000L) {
             lastConfidence = 0f
             return
         }
