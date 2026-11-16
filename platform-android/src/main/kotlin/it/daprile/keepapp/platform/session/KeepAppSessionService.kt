@@ -166,7 +166,13 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
     ) { gesture, _ ->
         when (gesture) {
             HeadsetGesture.SINGLE_TAP -> handleTogglePause()
-            HeadsetGesture.DOUBLE_TAP -> cycleNextPattern()
+            HeadsetGesture.DOUBLE_TAP -> {
+                // D44: doppio tocco riservato al recap vocale della Fase 1B (nessuna funzione in 1A)
+                if (!doubleTapSupported) {
+                    doubleTapSupported = true
+                    profileStore?.markDoubleTapSupported(activeDeviceKey, true)
+                }
+            }
         }
     }
     private val pendingSingleTapRunnable = Runnable {
@@ -178,6 +184,12 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
 
     @Volatile
     private var activeDeviceName: String = "Altoparlante / Jack"
+
+    @Volatile
+    private var activeDeviceKey: String = "local_speaker"
+
+    @Volatile
+    private var doubleTapSupported: Boolean = false
 
     @Volatile
     private var autoLevelEnabled: Boolean = true
@@ -310,8 +322,10 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         val store = profileStore ?: BtLatencyProfileStore(this)
         val dev = store.detectActiveOutputDevice()
         val saved = store.load(dev.key)
+        activeDeviceKey = dev.key
         activeDeviceName = dev.displayName
         appliedBtLatencyMs = saved?.latencyMs ?: if (dev.isBluetooth) 150f else 10f
+        doubleTapSupported = saved?.supportsDoubleTap ?: store.isDoubleTapSupported(dev.key)
 
         // 2. Avvia ForegroundService
         val initialNotif = buildNotification("Sessione avviata · $activeDeviceName")
@@ -604,6 +618,11 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
 
     private fun onHeadsetRawSingleTap() {
         mainHandler.post {
+            if (!doubleTapSupported) {
+                // Cuffia senza doppio tocco (es. MANKIW-X15): singolo tocco immediato senza ritardo
+                handleTogglePause()
+                return@post
+            }
             val nowMs = SystemClock.elapsedRealtime()
             mainHandler.removeCallbacks(pendingSingleTapRunnable)
             val openedWindow = headsetTapDetector.onSingleTap(nowMs)
@@ -613,24 +632,16 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         }
     }
 
-    private fun cycleNextPattern() {
-        val engine = audioEngine ?: return
-        val all = PatternAssetLoader.loadAll(this)
-        if (all.isEmpty()) return
-        val curId = engine.patternEngine.currentPattern.id
-        val idx = all.indexOfFirst { it.id == curId }
-        val next = all[(idx + 1) % all.size]
-        engine.setPattern(next)
-        historyStore?.let { store ->
-            store.savePreferences(store.loadPreferences().copy(patternId = next.id))
+    private fun onHeadsetHardwareDoubleTap() {
+        mainHandler.post {
+            mainHandler.removeCallbacks(pendingSingleTapRunnable)
+            headsetTapDetector.reset()
+            if (!doubleTapSupported) {
+                doubleTapSupported = true
+                profileStore?.markDoubleTapSupported(activeDeviceKey, true)
+            }
+            // D44: doppio tocco senza funzione in 1A (riservato al recap vocale della 1B)
         }
-        _liveState.value = _liveState.value.copy(
-            audioTelemetry = _liveState.value.audioTelemetry.copy(
-                activePatternId = next.id,
-                activePatternName = next.name
-            )
-        )
-        updateNotification("Pattern: ${next.name}")
     }
 
     private fun setupMediaSession() {
@@ -652,6 +663,10 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
                             onHeadsetRawSingleTap()
                             return true
                         }
+                        KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                            onHeadsetHardwareDoubleTap()
+                            return true
+                        }
                     }
                 }
                 return super.onMediaButtonEvent(mediaButtonIntent)
@@ -659,6 +674,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
 
             override fun onPlay() = onHeadsetRawSingleTap()
             override fun onPause() = onHeadsetRawSingleTap()
+            override fun onSkipToNext() = onHeadsetHardwareDoubleTap()
         })
         session.setPlaybackState(
             PlaybackState.Builder()

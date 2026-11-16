@@ -34,7 +34,8 @@ data class SavedBtLatencyProfile(
     val latencyMs: Float,
     val stdDevMs: Float,
     val method: CalibrationMethod,
-    val calibratedAtMs: Long
+    val calibratedAtMs: Long,
+    val supportsDoubleTap: Boolean = false
 )
 
 /**
@@ -92,7 +93,18 @@ class BtLatencyProfileStore(context: Context) {
             .putFloat("${prefix}_stddev_ms", profile.stdDevMs)
             .putString("${prefix}_method", profile.method.name)
             .putLong("${prefix}_timestamp_ms", profile.calibratedAtMs)
+            .putBoolean("${prefix}_double_tap", profile.supportsDoubleTap)
             .apply()
+    }
+
+    fun markDoubleTapSupported(deviceKey: String, supported: Boolean = true) {
+        val prefix = sanitizeKey(deviceKey)
+        prefs.edit().putBoolean("${prefix}_double_tap", supported).apply()
+    }
+
+    fun isDoubleTapSupported(deviceKey: String): Boolean {
+        val prefix = sanitizeKey(deviceKey)
+        return prefs.getBoolean("${prefix}_double_tap", false)
     }
 
     fun load(deviceKey: String): SavedBtLatencyProfile? {
@@ -105,13 +117,15 @@ class BtLatencyProfileStore(context: Context) {
         val method = runCatching { CalibrationMethod.valueOf(methodName ?: "MANUAL") }
             .getOrDefault(CalibrationMethod.MANUAL)
         val ts = prefs.getLong("${prefix}_timestamp_ms", 0L)
+        val dbl = prefs.getBoolean("${prefix}_double_tap", false)
         return SavedBtLatencyProfile(
             deviceKey = deviceKey,
             deviceName = name,
             latencyMs = latency,
             stdDevMs = stdDev,
             method = method,
-            calibratedAtMs = ts
+            calibratedAtMs = ts,
+            supportsDoubleTap = dbl
         )
     }
 
