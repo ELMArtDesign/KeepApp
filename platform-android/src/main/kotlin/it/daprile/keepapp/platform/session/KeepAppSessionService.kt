@@ -51,10 +51,12 @@ import it.daprile.keepapp.core.session.SessionMetricsTracker
 import it.daprile.keepapp.core.session.SessionRunState
 import it.daprile.keepapp.core.session.SessionStateMachine
 import it.daprile.keepapp.core.session.SessionSummaryRecord
+import it.daprile.keepapp.core.session.VoiceAnnouncementPlanner
 import it.daprile.keepapp.platform.audio.AudioEngineTelemetry
 import it.daprile.keepapp.platform.audio.BtLatencyProfileStore
 import it.daprile.keepapp.platform.audio.KeepAppAudioEngine
 import it.daprile.keepapp.platform.audio.PatternAssetLoader
+import it.daprile.keepapp.platform.audio.VoiceCoach
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -77,6 +79,7 @@ data class LiveSessionUiState(
     val appliedBtLatencyMs: Float = 120f,
     val gpsSpeedMps: Float = 0f,
     val autoLevelEnabled: Boolean = true,
+    val voiceCoachEnabled: Boolean = true,
     val audioTelemetry: AudioEngineTelemetry = AudioEngineTelemetry(),
     val lastCompletedSummary: SessionSummaryRecord? = null
 )
@@ -97,11 +100,13 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         const val ACTION_SET_PATTERN = "it.daprile.keepapp.action.SET_PATTERN"
         const val ACTION_SET_AUTO_LEVEL = "it.daprile.keepapp.action.SET_AUTO_LEVEL"
         const val ACTION_SET_MANUAL_LEVEL = "it.daprile.keepapp.action.SET_MANUAL_LEVEL"
+        const val ACTION_SET_VOICE_COACH = "it.daprile.keepapp.action.SET_VOICE_COACH"
 
         const val EXTRA_AUDIO_MODE = "extra_audio_mode"
         const val EXTRA_PATTERN_ID = "extra_pattern_id"
         const val EXTRA_AUTO_LEVEL = "extra_auto_level"
         const val EXTRA_LEVEL_INDEX = "extra_level_index"
+        const val EXTRA_VOICE_COACH = "extra_voice_coach"
 
         private const val CHANNEL_ID = "keepapp_live_session"
         private const val NOTIFICATION_ID = 4001
@@ -141,6 +146,8 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
     private var profileStore: BtLatencyProfileStore? = null
     private var historyStore: SessionHistoryStore? = null
     private var metricsTracker: SessionMetricsTracker? = null
+    private var voiceCoach: VoiceCoach? = null
+    private val voicePlanner = VoiceAnnouncementPlanner()
 
     @Volatile
     private var appliedBtLatencyMs: Float = 120f
@@ -150,6 +157,9 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
 
     @Volatile
     private var autoLevelEnabled: Boolean = true
+
+    @Volatile
+    private var voiceCoachEnabled: Boolean = true
 
     @Volatile
     private var lastGpsSpeedMps: Float = 0f
@@ -229,6 +239,14 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
                 audioEngine?.setLevel(lvl)
                 _liveState.value = _liveState.value.copy(autoLevelEnabled = false)
             }
+            ACTION_SET_VOICE_COACH -> {
+                voiceCoachEnabled = intent.getBooleanExtra(EXTRA_VOICE_COACH, true)
+                voiceCoach?.enabled = voiceCoachEnabled
+                _liveState.value = _liveState.value.copy(voiceCoachEnabled = voiceCoachEnabled)
+                historyStore?.let { store ->
+                    store.savePreferences(store.loadPreferences().copy(voiceCoachEnabled = voiceCoachEnabled))
+                }
+            }
         }
         return START_STICKY
     }
@@ -269,9 +287,10 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
             acquire(4 * 60 * 60 * 1000L) // timeout sicurezza 4h
         }
 
-        // 4. Inizializza StateMachine + AudioEngine + Preferenze + MetricsTracker
+        // 4. Inizializza StateMachine + AudioEngine + Preferenze + MetricsTracker + VoiceCoach
         val prefs = (historyStore ?: SessionHistoryStore(this)).loadPreferences()
         autoLevelEnabled = prefs.autoLevelEnabled
+        voiceCoachEnabled = prefs.voiceCoachEnabled
         val patterns = PatternAssetLoader.loadAll(this)
         val initialPat = patterns.find { it.id == prefs.patternId } ?: patterns.first()
         val engine = KeepAppAudioEngine(initialPattern = initialPat, config = config)
@@ -279,6 +298,12 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         val sm = SessionStateMachine(config = config, initialPositionHint = PhonePosition.ARM)
         val nowMs = System.currentTimeMillis()
         metricsTracker = SessionMetricsTracker(sessionId = "sess_$nowMs", startedAtMs = nowMs)
+        voicePlanner.reset()
+        voiceCoach = VoiceCoach(this) { speaking ->
+            audioEngine?.setVolume(if (speaking) 0.30f else 1.0f)
+        }.apply {
+            enabled = voiceCoachEnabled
+        }
         audioEngine = engine
         stateMachine = sm
 
@@ -325,6 +350,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
             activeDeviceName = activeDeviceName,
             appliedBtLatencyMs = appliedBtLatencyMs,
             autoLevelEnabled = autoLevelEnabled,
+            voiceCoachEnabled = voiceCoachEnabled,
             audioTelemetry = engine.telemetry.value
         )
     }
@@ -346,6 +372,8 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
 
         releaseMediaSession()
         abandonAudioFocus()
+        voiceCoach?.shutdown()
+        voiceCoach = null
 
         val completedSummary = metricsTracker?.buildSummary(
             deviceName = activeDeviceName,
@@ -371,6 +399,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
             activeDeviceName = activeDeviceName,
             appliedBtLatencyMs = appliedBtLatencyMs,
             autoLevelEnabled = autoLevelEnabled,
+            voiceCoachEnabled = voiceCoachEnabled,
             lastCompletedSummary = completedSummary ?: _liveState.value.lastCompletedSummary
         )
 
@@ -383,6 +412,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         val engine = audioEngine ?: return
         val paused = sm.togglePauseResume(SystemClock.elapsedRealtimeNanos())
         engine.setMuted(paused)
+        voiceCoach?.speak(if (paused) "Sessione in pausa." else "Sessione ripresa.")
         _liveState.value = _liveState.value.copy(
             runState = if (paused) SessionRunState.PAUSED else SessionRunState.ACTIVE_RUNNING,
             audioTelemetry = engine.telemetry.value
@@ -426,6 +456,9 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
     private fun applySnapshotToAudioAndUi(snapshot: SessionFrameSnapshot) {
         val engine = audioEngine ?: return
         metricsTracker?.onSnapshot(snapshot)
+        voicePlanner.onSnapshot(snapshot)?.let { announcement ->
+            voiceCoach?.speak(announcement)
+        }
 
         if (!hasInitialCadenceLock && snapshot.cadenceEstimate.cadenceSpm >= config.minCadenceSpm) {
             hasInitialCadenceLock = true
@@ -489,6 +522,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
             appliedBtLatencyMs = appliedBtLatencyMs,
             gpsSpeedMps = lastGpsSpeedMps,
             autoLevelEnabled = autoLevelEnabled,
+            voiceCoachEnabled = voiceCoachEnabled,
             audioTelemetry = audioTel
         )
 

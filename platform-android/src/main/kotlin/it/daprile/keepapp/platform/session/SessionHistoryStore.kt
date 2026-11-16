@@ -23,7 +23,8 @@ import org.json.JSONObject
 data class UserAudioPreferences(
     val audioMode: AudioMode = AudioMode.RHYTHM_PATTERN,
     val patternId: String = "pulse_steady",
-    val autoLevelEnabled: Boolean = true
+    val autoLevelEnabled: Boolean = true,
+    val voiceCoachEnabled: Boolean = true
 )
 
 /**
@@ -37,6 +38,7 @@ class SessionHistoryStore(context: Context) {
         private const val KEY_PREF_MODE = "pref_audio_mode"
         private const val KEY_PREF_PATTERN = "pref_pattern_id"
         private const val KEY_PREF_AUTO_LEVEL = "pref_auto_level"
+        private const val KEY_PREF_VOICE_COACH = "pref_voice_coach"
         private const val MAX_HISTORY_ENTRIES = 30
     }
 
@@ -47,10 +49,12 @@ class SessionHistoryStore(context: Context) {
         val mode = runCatching { AudioMode.valueOf(modeName ?: "") }.getOrDefault(AudioMode.RHYTHM_PATTERN)
         val patternId = prefs.getString(KEY_PREF_PATTERN, "pulse_steady") ?: "pulse_steady"
         val autoLevel = prefs.getBoolean(KEY_PREF_AUTO_LEVEL, true)
+        val voiceCoach = prefs.getBoolean(KEY_PREF_VOICE_COACH, true)
         return UserAudioPreferences(
             audioMode = mode,
             patternId = patternId,
-            autoLevelEnabled = autoLevel
+            autoLevelEnabled = autoLevel,
+            voiceCoachEnabled = voiceCoach
         )
     }
 
@@ -59,6 +63,7 @@ class SessionHistoryStore(context: Context) {
             .putString(KEY_PREF_MODE, preferences.audioMode.name)
             .putString(KEY_PREF_PATTERN, preferences.patternId)
             .putBoolean(KEY_PREF_AUTO_LEVEL, preferences.autoLevelEnabled)
+            .putBoolean(KEY_PREF_VOICE_COACH, preferences.voiceCoachEnabled)
             .apply()
     }
 

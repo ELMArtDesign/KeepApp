@@ -146,6 +146,13 @@ class MainActivity : ComponentActivity() {
                                     .putExtra(KeepAppSessionService.EXTRA_AUTO_LEVEL, auto)
                             )
                         },
+                        onLiveToggleVoiceCoach = { enabled ->
+                            startService(
+                                Intent(this, KeepAppSessionService::class.java)
+                                    .setAction(KeepAppSessionService.ACTION_SET_VOICE_COACH)
+                                    .putExtra(KeepAppSessionService.EXTRA_VOICE_COACH, enabled)
+                            )
+                        },
                         onLiveSelectManualLevel = { lvl ->
                             startService(
                                 Intent(this, KeepAppSessionService::class.java)
@@ -206,6 +213,7 @@ private fun KeepAppMainScreen(
     onLiveSelectMode: (AudioMode) -> Unit,
     onLiveSelectPattern: (RhythmPattern) -> Unit,
     onLiveToggleAutoLevel: (Boolean) -> Unit,
+    onLiveToggleVoiceCoach: (Boolean) -> Unit,
     onLiveSelectManualLevel: (Int) -> Unit,
     onToggleManualRun: () -> Unit,
     onSelectMode: (AudioMode) -> Unit,
@@ -345,6 +353,7 @@ private fun KeepAppMainScreen(
                 onSelectMode = onLiveSelectMode,
                 onSelectPattern = onLiveSelectPattern,
                 onToggleAutoLevel = onLiveToggleAutoLevel,
+                onToggleVoiceCoach = onLiveToggleVoiceCoach,
                 onSelectManualLevel = onLiveSelectManualLevel
             )
             1 -> SessionHistoryTab(
@@ -385,6 +394,7 @@ private fun LiveSessionTab(
     onSelectMode: (AudioMode) -> Unit,
     onSelectPattern: (RhythmPattern) -> Unit,
     onToggleAutoLevel: (Boolean) -> Unit,
+    onToggleVoiceCoach: (Boolean) -> Unit,
     onSelectManualLevel: (Int) -> Unit
 ) {
     var selectedPatternId by remember { mutableStateOf(patterns.first().id) }
@@ -491,6 +501,15 @@ private fun LiveSessionTab(
                 ) {
                     Text("Livello Automatico (da Ancora/Sosta)")
                     Switch(checked = liveState.autoLevelEnabled, onCheckedChange = onToggleAutoLevel)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Avvisi Vocali Discreti (TTS)")
+                    Switch(checked = liveState.voiceCoachEnabled, onCheckedChange = onToggleVoiceCoach)
                 }
 
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
