@@ -33,7 +33,8 @@ data class CalibrationSummary(
     val stdDevMs: Float,
     val validSamples: Int,
     val totalSamples: Int,
-    val method: CalibrationMethod
+    val method: CalibrationMethod,
+    val madMs: Float = 0f
 )
 
 /**
@@ -75,9 +76,10 @@ object BluetoothCalibrationMath {
         val requiredPeak = max(noiseFloorRms * snrThreshold, minPeakAmplitude)
         if (maxIdx < 0 || maxAbs < requiredPeak) return null
 
-        // Risaliamo indietro fino a ~5 ms (240 campioni a 48 kHz) per trovare l'inizio del fronte d'attacco
-        val onsetThreshold = max(noiseFloorRms * 3.0f, maxAbs * 0.35f)
-        val searchStart = max(lo, maxIdx - 240)
+        // Risaliamo indietro fino a ~20 ms (960 campioni a 48 kHz) per coprire l'intero fronte
+        // d'attacco sia su altoparlante sia su conduzione ossea (impulso Hann da 30 ms)
+        val onsetThreshold = max(noiseFloorRms * 3.5f, maxAbs * 0.25f)
+        val searchStart = max(lo, maxIdx - 960)
         for (i in searchStart..maxIdx) {
             if (abs(pcmWindow[i].toFloat()) >= onsetThreshold) {
                 return i
@@ -154,9 +156,10 @@ object BluetoothCalibrationMath {
     fun summarizeLatencies(
         latenciesMs: List<Float>,
         totalAttempts: Int,
-        method: CalibrationMethod
+        method: CalibrationMethod,
+        minPlausibleMs: Float = 0f
     ): CalibrationSummary? {
-        val plausible = latenciesMs.filter { it in 0f..650f }
+        val plausible = latenciesMs.filter { it in minPlausibleMs..650f }
         if (plausible.isEmpty()) return null
 
         val filtered = if (plausible.size >= 4) {
@@ -171,6 +174,7 @@ object BluetoothCalibrationMath {
         }
 
         val med = median(filtered)
+        val mad = median(filtered.map { abs(it - med) })
         val mean = filtered.sum() / filtered.size.toFloat()
         var varSum = 0.0
         for (v in filtered) {
@@ -185,7 +189,8 @@ object BluetoothCalibrationMath {
             stdDevMs = std,
             validSamples = filtered.size,
             totalSamples = max(totalAttempts, filtered.size),
-            method = method
+            method = method,
+            madMs = mad
         )
     }
 

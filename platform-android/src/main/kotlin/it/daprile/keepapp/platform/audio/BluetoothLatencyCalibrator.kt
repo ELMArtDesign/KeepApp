@@ -12,6 +12,10 @@ package it.daprile.keepapp.platform.audio
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
@@ -40,13 +44,22 @@ data class CalibrationUiState(
     val isRunning: Boolean = false,
     val method: CalibrationMethod? = null,
     val isSpeakerCheck: Boolean = false,
+    val isBodyTapCheck: Boolean = false,
     val progressStep: Int = 0,
     val totalSteps: Int = 0,
     val statusMessage: String = "Pronto per la calibrazione",
     val noiseFloorRms: Float = 0f,
     val liveSamplesMs: List<Float> = emptyList(),
     val summary: CalibrationSummary? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val rMicMedianMs: Float? = null,
+    val rMicMadMs: Float? = null,
+    val imuFifoDelayMs: Float? = null,
+    val speakerXRawMs: Float? = null,
+    val speakerXMadMs: Float? = null,
+    val btLoopbackMs: Float? = null,
+    val btLoopbackMadMs: Float? = null,
+    val recHwTimestampActive: Boolean = false
 )
 
 /**
@@ -64,6 +77,7 @@ class BluetoothLatencyCalibrator(
         private const val CHUNK_FRAMES = 480 // 10 ms
         private const val CONTACT_IMPULSE_COUNT = 8 // D43: almeno 8 impulsi con mediana e MAD
         private const val CONTACT_PERIOD_MS = 1100
+        private const val BODY_TAP_COUNT = 10 // Test del colpo per misurare R_mic
         private const val TAP_BEAT_COUNT = 16
         private const val TAP_PERIOD_MS = 500 // 120 BPM
     }
@@ -85,12 +99,16 @@ class BluetoothLatencyCalibrator(
     fun startContactImpulseCalibration() {
         if (running) return
         running = true
-        _state.value = CalibrationUiState(
+        _state.value = _state.value.copy(
             isRunning = true,
             method = CalibrationMethod.CONTACT_IMPULSE,
             isSpeakerCheck = false,
+            isBodyTapCheck = false,
             progressStep = 0,
             totalSteps = CONTACT_IMPULSE_COUNT,
+            liveSamplesMs = emptyList(),
+            summary = null,
+            errorMessage = null,
             statusMessage = "Appoggia le cuffie al microfono: misuro il rumore di fondo..."
         )
         workerThread = Thread({ runContactCalibration(targetSpeaker = false) }, "KeepApp-BtCalib-Contact").also { it.start() }
@@ -104,15 +122,42 @@ class BluetoothLatencyCalibrator(
     fun startSpeakerLoopbackCheck() {
         if (running) return
         running = true
-        _state.value = CalibrationUiState(
+        _state.value = _state.value.copy(
             isRunning = true,
             method = CalibrationMethod.CONTACT_IMPULSE,
             isSpeakerCheck = true,
+            isBodyTapCheck = false,
             progressStep = 0,
             totalSteps = CONTACT_IMPULSE_COUNT,
+            liveSamplesMs = emptyList(),
+            summary = null,
+            errorMessage = null,
             statusMessage = "Verifica altoparlante interno (X): stanza silenziosa, misuro il rumore di fondo..."
         )
         workerThread = Thread({ runContactCalibration(targetSpeaker = true) }, "KeepApp-SpkCheck-Contact").also { it.start() }
+    }
+
+    /**
+     * Test del colpo: Adriano batte 10 volte un dito sulla scocca del telefono sul tavolo
+     * per misurare R_mic (ritardo microfono rispetto a SensorEvent.timestamp) e il ritardo FIFO D36.
+     */
+    @Synchronized
+    fun startBodyTapMicDelayTest() {
+        if (running) return
+        running = true
+        _state.value = _state.value.copy(
+            isRunning = true,
+            method = CalibrationMethod.CONTACT_IMPULSE,
+            isSpeakerCheck = false,
+            isBodyTapCheck = true,
+            progressStep = 0,
+            totalSteps = BODY_TAP_COUNT,
+            liveSamplesMs = emptyList(),
+            summary = null,
+            errorMessage = null,
+            statusMessage = "Appoggia il telefono sul tavolo: batti un dito sulla scocca 10 volte (~1/s)..."
+        )
+        workerThread = Thread({ runBodyTapMicDelayTest() }, "KeepApp-BodyTap-RMic").also { it.start() }
     }
 
     /**
@@ -125,12 +170,16 @@ class BluetoothLatencyCalibrator(
         synchronized(tapLock) {
             tapTimestampsNs.clear()
         }
-        _state.value = CalibrationUiState(
+        _state.value = _state.value.copy(
             isRunning = true,
             method = CalibrationMethod.TAP_TO_BEAT,
             isSpeakerCheck = false,
+            isBodyTapCheck = false,
             progressStep = 0,
             totalSteps = TAP_BEAT_COUNT,
+            liveSamplesMs = emptyList(),
+            summary = null,
+            errorMessage = null,
             statusMessage = "Ascolta i primi 2 colpi, poi batti il dito a tempo sul pulsante!"
         )
         workerThread = Thread({ runTapToBeatCalibration() }, "KeepApp-BtCalib-Tap").also { it.start() }
@@ -226,6 +275,7 @@ class BluetoothLatencyCalibrator(
         val captureWindowSamples = (sampleRateHz * 0.65).toInt()
         val captureRing = ShortArray(sampleRateHz * 2) // 2 secondi circolari
         var totalRecSamples = 0L
+        var recHwTsCount = 0
 
         val recThread = Thread({
             val tmp = ShortArray(CHUNK_FRAMES)
@@ -234,9 +284,13 @@ class BluetoothLatencyCalibrator(
                 while (running) {
                     val read = recorder.read(tmp, 0, tmp.size, AudioRecord.READ_BLOCKING)
                     if (read > 0) {
-                        // Usiamo direttamente (totalRecSamples + read, elapsedRealtimeNanos) così l'asse
-                        // dell'indice campione di captureRing coincide esattamente con TIMEBASE_BOOTTIME.
-                        recEstimator.updateFromTimestamp(totalRecSamples + read, SystemClock.elapsedRealtimeNanos())
+                        val gotRecTs = recorder.getTimestamp(recTs, AudioTimestamp.TIMEBASE_BOOTTIME) == AudioRecord.SUCCESS
+                        if (gotRecTs && recTs.nanoTime > 0L) {
+                            recHwTsCount++
+                            recEstimator.updateFromTimestamp(recTs.framePosition, recTs.nanoTime)
+                        } else {
+                            recEstimator.updateFromTimestamp(totalRecSamples + read, SystemClock.elapsedRealtimeNanos())
+                        }
                         for (i in 0 until read) {
                             captureRing[((totalRecSamples + i) % captureRing.size).toInt()] = tmp[i]
                         }
@@ -318,9 +372,12 @@ class BluetoothLatencyCalibrator(
                         analyzedThisImpulse = true
                         val trackOutNs = trackEstimator.outputTimeNsForSample(impulseStartSample)
                         if (trackOutNs != null) {
-                            val nowBootNs = SystemClock.elapsedRealtimeNanos()
-                            val elapsedSinceOutSamples = (((nowBootNs - trackOutNs).toDouble() / 1_000_000_000.0) * sampleRateHz).toLong()
-                            val recStartSample = max(0L, totalRecSamples - elapsedSinceOutSamples)
+                            val recStartSample = recEstimator.sampleIndexForOutputTimeNs(trackOutNs)?.coerceAtLeast(0L)
+                                ?: run {
+                                    val nowBootNs = SystemClock.elapsedRealtimeNanos()
+                                    val elapsedSinceOutSamples = (((nowBootNs - trackOutNs).toDouble() / 1_000_000_000.0) * sampleRateHz).toLong()
+                                    max(0L, totalRecSamples - elapsedSinceOutSamples)
+                                }
                             val availableSamples = (totalRecSamples - recStartSample).toInt().coerceIn(0, captureWindowSamples)
                             if (availableSamples >= sampleRateHz / 4) {
                                 for (i in 0 until availableSamples) {
@@ -360,11 +417,18 @@ class BluetoothLatencyCalibrator(
             )
 
             running = false
+            val hwTsActive = recHwTsCount > 0
             _state.value = _state.value.copy(
                 isRunning = false,
                 summary = summary,
+                recHwTimestampActive = hwTsActive,
+                speakerXRawMs = if (targetSpeaker && summary != null) summary.medianLatencyMs else _state.value.speakerXRawMs,
+                speakerXMadMs = if (targetSpeaker && summary != null) summary.madMs else _state.value.speakerXMadMs,
+                btLoopbackMs = if (!targetSpeaker && summary != null) summary.medianLatencyMs else _state.value.btLoopbackMs,
+                btLoopbackMadMs = if (!targetSpeaker && summary != null) summary.madMs else _state.value.btLoopbackMadMs,
                 statusMessage = if (summary != null) {
-                    "Calibrazione completata: ${"%.1f".format(summary.medianLatencyMs)} ms (±${"%.1f".format(summary.stdDevMs)} ms)"
+                    val tsTag = if (hwTsActive) "getTimestamp OK" else "fallback read()"
+                    "Completata ($tsTag): med ${"%.1f".format(summary.medianLatencyMs)} ms (MAD ±${"%.1f".format(summary.madMs)} ms)"
                 } else {
                     "Nessun impulso rilevato (trackPLL=${trackEstimator.sampleCount}, recPLL=${recEstimator.sampleCount}, fondo=${noiseFloor.toInt()}, maxPicco=$maxObservedPeak). Avvicina la cuffia al microfono."
                 }
@@ -382,6 +446,234 @@ class BluetoothLatencyCalibrator(
                 recorder.release()
             }
             releaseTrack(track)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun runBodyTapMicDelayTest() {
+        val sm = context?.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val accel = sm?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        if (sm == null || accel == null) {
+            running = false
+            _state.value = _state.value.copy(
+                isRunning = false,
+                errorMessage = "Accelerometro non disponibile su questo dispositivo."
+            )
+            return
+        }
+
+        val minRecBytes = AudioRecord.getMinBufferSize(
+            sampleRateHz,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
+        val recBufBytes = max(minRecBytes * 2, sampleRateHz * 2)
+        val recorder = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.UNPROCESSED,
+                sampleRateHz,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                recBufBytes
+            ).takeIf { it.state == AudioRecord.STATE_INITIALIZED } ?: AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                sampleRateHz,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                recBufBytes
+            )
+        } catch (_: Throwable) {
+            null
+        }
+        if (recorder == null || recorder.state != AudioRecord.STATE_INITIALIZED) {
+            recorder?.release()
+            running = false
+            _state.value = _state.value.copy(
+                isRunning = false,
+                errorMessage = "Impossibile aprire il microfono (permesso RECORD_AUDIO mancante?)"
+            )
+            return
+        }
+
+        val recEstimator = AudioClockEstimator(sampleRateHz)
+        val recTs = AudioTimestamp()
+        val captureRing = ShortArray(sampleRateHz * 3)
+        var totalRecSamples = 0L
+        var recHwTsCount = 0
+
+        val recThread = Thread({
+            val tmp = ShortArray(CHUNK_FRAMES)
+            try {
+                recorder.startRecording()
+                while (running) {
+                    val read = recorder.read(tmp, 0, tmp.size, AudioRecord.READ_BLOCKING)
+                    if (read > 0) {
+                        val gotRecTs = recorder.getTimestamp(recTs, AudioTimestamp.TIMEBASE_BOOTTIME) == AudioRecord.SUCCESS
+                        if (gotRecTs && recTs.nanoTime > 0L) {
+                            recHwTsCount++
+                            recEstimator.updateFromTimestamp(recTs.framePosition, recTs.nanoTime)
+                        } else {
+                            recEstimator.updateFromTimestamp(totalRecSamples + read, SystemClock.elapsedRealtimeNanos())
+                        }
+                        for (i in 0 until read) {
+                            captureRing[((totalRecSamples + i) % captureRing.size).toInt()] = tmp[i]
+                        }
+                        totalRecSamples += read
+                    } else if (read < 0) {
+                        break
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }, "KeepApp-BodyTap-Mic")
+
+        val tapLockObj = Any()
+        val pendingTapAccelNs = ArrayDeque<Long>()
+        val fifoDelaysMs = ArrayList<Float>(16)
+        var gravityEma = 9.81f
+        var lastTapNs = 0L
+        var warmupDoneNs = 0L
+
+        val accelListener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                if (!running) return
+                val mag = kotlin.math.sqrt(
+                    event.values[0] * event.values[0] +
+                        event.values[1] * event.values[1] +
+                        event.values[2] * event.values[2]
+                )
+                if (warmupDoneNs == 0L || event.timestamp < warmupDoneNs) {
+                    gravityEma = 0.9f * gravityEma + 0.1f * mag
+                    return
+                }
+                val dyn = kotlin.math.abs(mag - gravityEma)
+                gravityEma = 0.98f * gravityEma + 0.02f * mag
+                if (dyn >= 2.2f && (lastTapNs == 0L || event.timestamp - lastTapNs >= 650_000_000L)) {
+                    lastTapNs = event.timestamp
+                    val fifoLagMs = ((SystemClock.elapsedRealtimeNanos() - event.timestamp) / 1_000_000f).coerceAtLeast(0f)
+                    synchronized(tapLockObj) {
+                        pendingTapAccelNs.addLast(event.timestamp)
+                        fifoDelaysMs.add(fifoLagMs)
+                    }
+                }
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+
+        try {
+            recThread.start()
+            sm.registerListener(accelListener, accel, SensorManager.SENSOR_DELAY_FASTEST, 0)
+
+            Thread.sleep(750L)
+            warmupDoneNs = SystemClock.elapsedRealtimeNanos()
+
+            val floorLen = minOf(19_200, totalRecSamples.toInt())
+            val floorBuf = ShortArray(floorLen)
+            val floorStart = max(0L, totalRecSamples - floorLen)
+            for (i in 0 until floorLen) {
+                floorBuf[i] = captureRing[((floorStart + i) % captureRing.size).toInt()]
+            }
+            val noiseFloor = BluetoothCalibrationMath.computeRms(floorBuf)
+            _state.value = _state.value.copy(
+                noiseFloorRms = noiseFloor,
+                statusMessage = "Pronto! Batti un dito sulla scocca 10 volte (~1/s)..."
+            )
+
+            val rMicSamples = ArrayList<Float>(BODY_TAP_COUNT)
+            val preWindowSamples = (sampleRateHz * 0.04).toInt() // -40 ms
+            val totalWinSamples = (sampleRateHz * 0.26).toInt()  // [-40 ms, +220 ms]
+            val analyzeBuf = ShortArray(totalWinSamples)
+            var detectedTaps = 0
+            val deadlineNs = SystemClock.elapsedRealtimeNanos() + 25_000_000_000L
+
+            while (running && detectedTaps < BODY_TAP_COUNT && SystemClock.elapsedRealtimeNanos() < deadlineNs) {
+                val nextTapNs: Long? = synchronized(tapLockObj) {
+                    val first = pendingTapAccelNs.firstOrNull()
+                    if (first != null && SystemClock.elapsedRealtimeNanos() - first >= 240_000_000L) {
+                        pendingTapAccelNs.removeFirst()
+                    } else null
+                }
+                if (nextTapNs != null) {
+                    detectedTaps++
+                    val winStartNs = nextTapNs - 40_000_000L
+                    val recStartSample = recEstimator.sampleIndexForOutputTimeNs(winStartNs)?.coerceAtLeast(0L)
+                        ?: run {
+                            val nowNs = SystemClock.elapsedRealtimeNanos()
+                            val elapsedSamples = (((nowNs - winStartNs).toDouble() / 1_000_000_000.0) * sampleRateHz).toLong()
+                            max(0L, totalRecSamples - elapsedSamples)
+                        }
+                    val avail = (totalRecSamples - recStartSample).toInt().coerceIn(0, totalWinSamples)
+                    if (avail > preWindowSamples + 200) {
+                        for (i in 0 until avail) {
+                            analyzeBuf[i] = captureRing[((recStartSample + i) % captureRing.size).toInt()]
+                        }
+                        val onsetIdx = BluetoothCalibrationMath.detectImpulseOnsetSample(
+                            pcmWindow = analyzeBuf,
+                            startIdx = 0,
+                            endIdxExclusive = avail,
+                            noiseFloorRms = noiseFloor,
+                            snrThreshold = 2.5f,
+                            minPeakAmplitude = 180f
+                        )
+                        if (onsetIdx != null) {
+                            val tMicNs = recEstimator.outputTimeNsForSample(recStartSample + onsetIdx)
+                                ?: (winStartNs + ((onsetIdx.toDouble() / sampleRateHz.toDouble()) * 1_000_000_000.0).toLong())
+                            val rMicMs = ((tMicNs - nextTapNs).toDouble() / 1_000_000.0).toFloat()
+                            if (rMicMs in -30f..250f) {
+                                rMicSamples.add(rMicMs)
+                            }
+                        }
+                    }
+                    _state.value = _state.value.copy(
+                        progressStep = detectedTaps,
+                        liveSamplesMs = rMicSamples.toList(),
+                        statusMessage = "Colpo $detectedTaps/$BODY_TAP_COUNT (R_mic validi: ${rMicSamples.size})"
+                    )
+                } else {
+                    Thread.sleep(25L)
+                }
+            }
+
+            val summary = BluetoothCalibrationMath.summarizeLatencies(
+                latenciesMs = rMicSamples,
+                totalAttempts = BODY_TAP_COUNT,
+                method = CalibrationMethod.CONTACT_IMPULSE,
+                minPlausibleMs = -30f
+            )
+            val fifoMed = if (fifoDelaysMs.isNotEmpty()) {
+                val sorted = fifoDelaysMs.sorted()
+                sorted[sorted.size / 2]
+            } else 0f
+
+            running = false
+            val hwTsActive = recHwTsCount > 0
+            _state.value = _state.value.copy(
+                isRunning = false,
+                summary = summary,
+                recHwTimestampActive = hwTsActive,
+                rMicMedianMs = summary?.medianLatencyMs ?: _state.value.rMicMedianMs,
+                rMicMadMs = summary?.madMs ?: _state.value.rMicMadMs,
+                imuFifoDelayMs = fifoMed,
+                statusMessage = if (summary != null) {
+                    "Test del colpo: R_mic=${"%.1f".format(summary.medianLatencyMs)} ms (MAD ±${"%.1f".format(summary.madMs)} ms) | FIFO IMU=${"%.1f".format(fifoMed)} ms"
+                } else {
+                    "Colpi insufficienti ($detectedTaps/$BODY_TAP_COUNT). Batti più deciso sulla scocca."
+                }
+            )
+        } finally {
+            running = false
+            sm.unregisterListener(accelListener)
+            try {
+                recThread.join(800)
+            } catch (_: InterruptedException) {
+            }
+            try {
+                recorder.stop()
+            } catch (_: Throwable) {
+            } finally {
+                recorder.release()
+            }
         }
     }
 

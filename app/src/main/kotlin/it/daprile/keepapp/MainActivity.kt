@@ -230,6 +230,12 @@ class MainActivity : ComponentActivity() {
                             earSyncTester.stop()
                             calibrator.startSpeakerLoopbackCheck()
                         },
+                        onStartBodyTapCheck = {
+                            KeepAppSessionService.stopSession(this)
+                            manualAudioEngine.stop()
+                            earSyncTester.stop()
+                            calibrator.startBodyTapMicDelayTest()
+                        },
                         onUserTap = { calibrator.registerUserTap() },
                         onCancelCalibration = { calibrator.cancel() },
                         onStartEarSync = { advanceMs ->
@@ -280,6 +286,7 @@ private fun KeepAppMainScreen(
     onStartContactCalibration: () -> Unit,
     onStartTapCalibration: () -> Unit,
     onStartSpeakerCheck: () -> Unit,
+    onStartBodyTapCheck: () -> Unit,
     onUserTap: () -> Unit,
     onCancelCalibration: () -> Unit,
     onStartEarSync: (Float) -> Unit,
@@ -437,6 +444,7 @@ private fun KeepAppMainScreen(
                 onStartContactCalibration = onStartContactCalibration,
                 onStartTapCalibration = onStartTapCalibration,
                 onStartSpeakerCheck = onStartSpeakerCheck,
+                onStartBodyTapCheck = onStartBodyTapCheck,
                 onUserTap = onUserTap,
                 onCancelCalibration = onCancelCalibration,
                 onStartEarSync = onStartEarSync,
@@ -1125,6 +1133,7 @@ private fun BluetoothCalibrationTab(
     onStartContactCalibration: () -> Unit,
     onStartTapCalibration: () -> Unit,
     onStartSpeakerCheck: () -> Unit,
+    onStartBodyTapCheck: () -> Unit,
     onUserTap: () -> Unit,
     onCancelCalibration: () -> Unit,
     onStartEarSync: (Float) -> Unit,
@@ -1142,19 +1151,26 @@ private fun BluetoothCalibrationTab(
     var earCheckLogs by remember { mutableStateOf(profileStore.loadEarCheckLogs()) }
     var earLogExportStatus by remember { mutableStateOf("") }
     var pendingSpeakerCheck by remember { mutableStateOf(false) }
+    var pendingBodyTapCheck by remember { mutableStateOf(false) }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            if (pendingSpeakerCheck) {
-                pendingSpeakerCheck = false
-                onStartSpeakerCheck()
-            } else {
-                onStartContactCalibration()
+            when {
+                pendingBodyTapCheck -> {
+                    pendingBodyTapCheck = false
+                    onStartBodyTapCheck()
+                }
+                pendingSpeakerCheck -> {
+                    pendingSpeakerCheck = false
+                    onStartSpeakerCheck()
+                }
+                else -> onStartContactCalibration()
             }
         } else {
             pendingSpeakerCheck = false
+            pendingBodyTapCheck = false
         }
     }
 
@@ -1260,6 +1276,25 @@ private fun BluetoothCalibrationTab(
                             Manifest.permission.RECORD_AUDIO
                         ) == PackageManager.PERMISSION_GRANTED
                         if (hasMic) {
+                            onStartBodyTapCheck()
+                        } else {
+                            pendingBodyTapCheck = true
+                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    enabled = !calibState.isRunning,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Test del colpo (10 tocchi su scocca — R_mic)")
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        val hasMic = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.RECORD_AUDIO
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (hasMic) {
                             onStartSpeakerCheck()
                         } else {
                             pendingSpeakerCheck = true
@@ -1341,18 +1376,19 @@ private fun BluetoothCalibrationTab(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        if (calibState.isSpeakerCheck) {
-                            "Risultato Altoparlante Interno (X)"
-                        } else {
-                            "Risultato Calibrazione"
+                        when {
+                            calibState.isBodyTapCheck -> "Risultato Test del Colpo (R_mic)"
+                            calibState.isSpeakerCheck -> "Risultato Altoparlante Interno (X)"
+                            else -> "Risultato Calibrazione"
                         },
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = String.format(
                             Locale.US,
-                            "Mediana: %.1f ms\nMedia: %.1f ms  |  Dev. Std: %.1f ms\nImpulsi rilevati: %d / %d",
+                            "Mediana: %.1f ms (MAD ±%.1f ms)\nMedia: %.1f ms  |  Dev. Std: %.1f ms\nCampioni validi: %d / %d",
                             res.medianLatencyMs,
+                            res.madMs,
                             res.meanLatencyMs,
                             res.stdDevMs,
                             res.validSamples,
@@ -1360,7 +1396,7 @@ private fun BluetoothCalibrationTab(
                         ),
                         fontFamily = FontFamily.Monospace
                     )
-                    if (!calibState.isSpeakerCheck) {
+                    if (!calibState.isSpeakerCheck && !calibState.isBodyTapCheck) {
                         Button(
                             onClick = {
                                 val profile = SavedBtLatencyProfile(
@@ -1379,6 +1415,43 @@ private fun BluetoothCalibrationTab(
                             Text("SALVA PROFILO PER ${activeDevice.displayName}")
                         }
                     }
+                }
+            }
+        }
+
+        // Riepilogo confronto latenze (1d): R_mic, X_vero, BT loopback, BT da orecchio, Scarto
+        if (calibState.rMicMedianMs != null || calibState.speakerXRawMs != null || calibState.btLoopbackMs != null) {
+            val rMic = calibState.rMicMedianMs
+            val xRaw = calibState.speakerXRawMs
+            val xVero = if (xRaw != null) xRaw - (rMic ?: 0f) else null
+            val earFusionMs = earCheckLogs.firstOrNull { it.outcome.contains("1 colpo") }?.totalAppliedMs ?: 78.0f
+            val btOrecchio = if (xVero != null) earFusionMs + xVero else null
+            val btLoop = calibState.btLoopbackMs
+            val scarto = if (btLoop != null && btOrecchio != null) btLoop - btOrecchio else null
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("Riepilogo Confronto Latenze (1d)", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = buildString {
+                            appendLine("AudioRecord.getTimestamp: ${if (calibState.recHwTimestampActive) "ATTIVO" else "fallback read()"}")
+                            appendLine("R_mic (colpo scocca): ${rMic?.let { String.format(Locale.US, "%.1f ms (MAD ±%.1f ms)", it, calibState.rMicMadMs ?: 0f) } ?: "da misurare"}")
+                            appendLine("Ritardo FIFO IMU (D36): ${calibState.imuFifoDelayMs?.let { String.format(Locale.US, "%.1f ms", it) } ?: "da misurare"}")
+                            appendLine("X_raw (altoparlante): ${xRaw?.let { String.format(Locale.US, "%.1f ms (MAD ±%.1f ms)", it, calibState.speakerXMadMs ?: 0f) } ?: "da misurare"}")
+                            appendLine("X_vero (X_raw - R_mic): ${xVero?.let { String.format(Locale.US, "%.1f ms", it) } ?: "n/d"}")
+                            appendLine("BT da loopback: ${btLoop?.let { String.format(Locale.US, "%.1f ms (MAD ±%.1f ms)", it, calibState.btLoopbackMadMs ?: 0f) } ?: "da misurare"}")
+                            appendLine("BT da orecchio (${String.format(Locale.US, "%.1f", earFusionMs)} + X_vero): ${btOrecchio?.let { String.format(Locale.US, "%.1f ms", it) } ?: "n/d"}")
+                            append("Scarto (loopback - orecchio): ${scarto?.let { String.format(Locale.US, "%+.1f ms", it) } ?: "n/d"}")
+                        },
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
         }
