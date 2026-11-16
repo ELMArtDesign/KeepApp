@@ -19,6 +19,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -56,6 +57,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -64,8 +70,11 @@ import androidx.core.content.ContextCompat
 import it.daprile.keepapp.core.audio.AudioMode
 import it.daprile.keepapp.core.audio.CalibrationMethod
 import it.daprile.keepapp.core.rhythm.RhythmPattern
+import it.daprile.keepapp.core.session.CadenceTracePoint
 import it.daprile.keepapp.core.session.SessionRunState
 import it.daprile.keepapp.core.session.SessionSummaryRecord
+import it.daprile.keepapp.core.session.TrainingMode
+import it.daprile.keepapp.core.session.TrainingPlanConfig
 import it.daprile.keepapp.platform.audio.AudioEngineTelemetry
 import it.daprile.keepapp.platform.audio.BluetoothLatencyCalibrator
 import it.daprile.keepapp.platform.audio.BtLatencyProfileStore
@@ -524,6 +533,24 @@ private fun LiveSessionTab(
             }
         }
 
+        val ctx = LocalContext.current
+        TrainingPlanCard(
+            initialPlan = liveState.trainingPlan,
+            onPlanChanged = { plan ->
+                val store = SessionHistoryStore(ctx)
+                store.savePreferences(store.loadPreferences().copy(trainingPlan = plan))
+                ctx.startService(
+                    Intent(ctx, KeepAppSessionService::class.java)
+                        .setAction(KeepAppSessionService.ACTION_SET_TRAINING_PLAN)
+                        .putExtra(KeepAppSessionService.EXTRA_TRAINING_MODE, plan.mode.name)
+                        .putExtra(KeepAppSessionService.EXTRA_FIXED_BPM, plan.fixedTargetBpm)
+                        .putExtra(KeepAppSessionService.EXTRA_RAMP_START_BPM, plan.rampStartBpm)
+                        .putExtra(KeepAppSessionService.EXTRA_RAMP_END_BPM, plan.rampEndBpm)
+                        .putExtra(KeepAppSessionService.EXTRA_RAMP_MINUTES, plan.rampDurationMinutes)
+                )
+            }
+        )
+
         // Telemetria Bluetooth & AudioEngine
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -595,6 +622,176 @@ private fun SummaryCard(
                 fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.bodySmall
             )
+            if (summary.tracePoints.size >= 2) {
+                Spacer(modifier = Modifier.height(4.dp))
+                CadenceTraceChart(tracePoints = summary.tracePoints)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TrainingPlanCard(
+    initialPlan: TrainingPlanConfig,
+    onPlanChanged: (TrainingPlanConfig) -> Unit
+) {
+    val context = LocalContext.current
+    val persisted = remember { SessionHistoryStore(context).loadPreferences().trainingPlan }
+    var plan by remember(initialPlan) { mutableStateOf(if (initialPlan == TrainingPlanConfig()) persisted else initialPlan) }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Modalità Allenamento", fontWeight = FontWeight.SemiBold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TrainingMode.entries.forEach { m ->
+                    FilterChip(
+                        selected = plan.mode == m,
+                        onClick = {
+                            val updated = plan.copy(mode = m)
+                            plan = updated
+                            onPlanChanged(updated)
+                        },
+                        label = { Text(m.label) }
+                    )
+                }
+            }
+
+            when (plan.mode) {
+                TrainingMode.ADAPTIVE_ANCHOR -> {
+                    Text(
+                        text = "Il ritmo si aggancia alla tua cadenza naturale e ti sostiene nei cali (D40).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                TrainingMode.FIXED_TARGET -> {
+                    Text(
+                        text = "Target Fisso: ${plan.fixedTargetBpm.roundToInt()} BPM",
+                        fontWeight = FontWeight.Medium
+                    )
+                    Slider(
+                        value = plan.fixedTargetBpm,
+                        onValueChange = {
+                            val updated = plan.copy(fixedTargetBpm = it)
+                            plan = updated
+                            onPlanChanged(updated)
+                        },
+                        valueRange = 90f..200f
+                    )
+                }
+                TrainingMode.PROGRESSIVE_RAMP -> {
+                    Text(
+                        text = "Da ${plan.rampStartBpm.roundToInt()} a ${plan.rampEndBpm.roundToInt()} BPM in ${plan.rampDurationMinutes} min",
+                        fontWeight = FontWeight.Medium
+                    )
+                    Slider(
+                        value = plan.rampStartBpm,
+                        onValueChange = {
+                            val updated = plan.copy(rampStartBpm = it)
+                            plan = updated
+                            onPlanChanged(updated)
+                        },
+                        valueRange = 90f..190f
+                    )
+                    Slider(
+                        value = plan.rampEndBpm,
+                        onValueChange = {
+                            val updated = plan.copy(rampEndBpm = it)
+                            plan = updated
+                            onPlanChanged(updated)
+                        },
+                        valueRange = 100f..200f
+                    )
+                    Slider(
+                        value = plan.rampDurationMinutes.toFloat(),
+                        onValueChange = {
+                            val updated = plan.copy(rampDurationMinutes = it.roundToInt().coerceIn(5, 60))
+                            plan = updated
+                            onPlanChanged(updated)
+                        },
+                        valueRange = 5f..60f
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CadenceTraceChart(tracePoints: List<CadenceTracePoint>) {
+    val validVals = tracePoints.flatMap { listOf(it.cadenceSpm, it.targetBpm) }.filter { it >= 50f }
+    val minVal = ((validVals.minOrNull() ?: 80f) - 10f).coerceAtLeast(40f)
+    val maxVal = ((validVals.maxOrNull() ?: 180f) + 10f).coerceAtLeast(minVal + 20f)
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val targetColor = Color(0xFF2E7D32)
+
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = "Andamento: Blu = Cadenza SPM  |  Verde = Target BPM (${minVal.roundToInt()}–${maxVal.roundToInt()})",
+            style = MaterialTheme.typography.labelSmall
+        )
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(84.dp)
+        ) {
+            val w = size.width
+            val h = size.height
+            val n = tracePoints.size
+            if (n < 2) return@Canvas
+
+            val cadencePath = Path()
+            val targetPath = Path()
+            var hasCadenceStarted = false
+            var hasTargetStarted = false
+
+            for (i in 0 until n) {
+                val x = (i.toFloat() / (n - 1).toFloat()) * w
+                val pt = tracePoints[i]
+                if (pt.cadenceSpm >= 50f) {
+                    val y = h - ((pt.cadenceSpm - minVal) / (maxVal - minVal)).coerceIn(0f, 1f) * h
+                    if (!hasCadenceStarted) {
+                        cadencePath.moveTo(x, y)
+                        hasCadenceStarted = true
+                    } else {
+                        cadencePath.lineTo(x, y)
+                    }
+                }
+                if (pt.targetBpm >= 50f) {
+                    val y = h - ((pt.targetBpm - minVal) / (maxVal - minVal)).coerceIn(0f, 1f) * h
+                    if (!hasTargetStarted) {
+                        targetPath.moveTo(x, y)
+                        hasTargetStarted = true
+                    } else {
+                        targetPath.lineTo(x, y)
+                    }
+                }
+            }
+
+            drawLine(
+                color = Color.Gray.copy(alpha = 0.35f),
+                start = Offset(0f, h / 2f),
+                end = Offset(w, h / 2f),
+                strokeWidth = 1f
+            )
+            if (hasTargetStarted) {
+                drawPath(
+                    path = targetPath,
+                    color = targetColor,
+                    style = Stroke(width = 3f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f)))
+                )
+            }
+            if (hasCadenceStarted) {
+                drawPath(
+                    path = cadencePath,
+                    color = primaryColor,
+                    style = Stroke(width = 4f)
+                )
+            }
         }
     }
 }

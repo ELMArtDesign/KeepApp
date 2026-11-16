@@ -14,6 +14,15 @@ import it.daprile.keepapp.core.anchor.AnchorState
 import it.daprile.keepapp.core.format.PhonePosition
 
 /**
+ * Punto campionato ogni ~5 secondi per il grafico cadenza/target nello Storico (Fase 1B — Step 3).
+ */
+data class CadenceTracePoint(
+    val elapsedSec: Int,
+    val cadenceSpm: Float,
+    val targetBpm: Float
+)
+
+/**
  * Riepilogo persistibile di una sessione di corsa/camminata completata (Milestone 5).
  */
 data class SessionSummaryRecord(
@@ -29,7 +38,8 @@ data class SessionSummaryRecord(
     val dominantPosition: PhonePosition,
     val deviceName: String,
     val appliedBtLatencyMs: Float,
-    val patternId: String
+    val patternId: String,
+    val tracePoints: List<CadenceTracePoint> = emptyList()
 )
 
 /**
@@ -49,8 +59,10 @@ class SessionMetricsTracker(
     private var pauseCount = 0
     private var prevRunState: SessionRunState? = null
     private val positionCounts = IntArray(PhonePosition.entries.size)
+    private val tracePoints = ArrayList<CadenceTracePoint>(180)
+    private var lastTraceSec: Int = -5
 
-    fun onSnapshot(snapshot: SessionFrameSnapshot) {
+    fun onSnapshot(snapshot: SessionFrameSnapshot, overrideTargetBpm: Float? = null) {
         lastDurationSec = snapshot.elapsedSeconds
         lastTotalSteps = snapshot.totalStepsDetected
 
@@ -59,11 +71,24 @@ class SessionMetricsTracker(
             activeCadenceSamples++
         }
 
-        if (initialLockedBpm <= 0f && snapshot.anchorSnapshot.state == AnchorState.LOCKED) {
-            initialLockedBpm = snapshot.anchorSnapshot.initialLockedBpm
+        val effectiveTarget = overrideTargetBpm ?: snapshot.anchorSnapshot.targetBpm
+        if (initialLockedBpm <= 0f && (overrideTargetBpm != null || snapshot.anchorSnapshot.state == AnchorState.LOCKED)) {
+            initialLockedBpm = overrideTargetBpm ?: snapshot.anchorSnapshot.initialLockedBpm
         }
-        if (snapshot.anchorSnapshot.targetBpm >= 60f) {
-            finalTargetBpm = snapshot.anchorSnapshot.targetBpm
+        if (effectiveTarget >= 60f) {
+            finalTargetBpm = effectiveTarget
+        }
+
+        val secInt = snapshot.elapsedSeconds.toInt()
+        if (secInt - lastTraceSec >= 5 && tracePoints.size < 180) {
+            lastTraceSec = secInt
+            tracePoints.add(
+                CadenceTracePoint(
+                    elapsedSec = secInt,
+                    cadenceSpm = snapshot.cadenceEstimate.cadenceSpm,
+                    targetBpm = effectiveTarget
+                )
+            )
         }
 
         if (prevRunState != snapshot.runState) {
@@ -112,7 +137,8 @@ class SessionMetricsTracker(
             dominantPosition = PhonePosition.entries[bestPosIdx],
             deviceName = deviceName,
             appliedBtLatencyMs = appliedBtLatencyMs,
-            patternId = patternId
+            patternId = patternId,
+            tracePoints = tracePoints.toList()
         )
     }
 }

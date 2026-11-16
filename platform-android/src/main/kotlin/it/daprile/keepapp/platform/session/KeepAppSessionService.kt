@@ -51,6 +51,8 @@ import it.daprile.keepapp.core.session.SessionMetricsTracker
 import it.daprile.keepapp.core.session.SessionRunState
 import it.daprile.keepapp.core.session.SessionStateMachine
 import it.daprile.keepapp.core.session.SessionSummaryRecord
+import it.daprile.keepapp.core.session.TrainingMode
+import it.daprile.keepapp.core.session.TrainingPlanConfig
 import it.daprile.keepapp.core.session.VoiceAnnouncementPlanner
 import it.daprile.keepapp.platform.audio.AudioEngineTelemetry
 import it.daprile.keepapp.platform.audio.BtLatencyProfileStore
@@ -80,6 +82,7 @@ data class LiveSessionUiState(
     val gpsSpeedMps: Float = 0f,
     val autoLevelEnabled: Boolean = true,
     val voiceCoachEnabled: Boolean = true,
+    val trainingPlan: TrainingPlanConfig = TrainingPlanConfig(),
     val audioTelemetry: AudioEngineTelemetry = AudioEngineTelemetry(),
     val lastCompletedSummary: SessionSummaryRecord? = null
 )
@@ -101,12 +104,18 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         const val ACTION_SET_AUTO_LEVEL = "it.daprile.keepapp.action.SET_AUTO_LEVEL"
         const val ACTION_SET_MANUAL_LEVEL = "it.daprile.keepapp.action.SET_MANUAL_LEVEL"
         const val ACTION_SET_VOICE_COACH = "it.daprile.keepapp.action.SET_VOICE_COACH"
+        const val ACTION_SET_TRAINING_PLAN = "it.daprile.keepapp.action.SET_TRAINING_PLAN"
 
         const val EXTRA_AUDIO_MODE = "extra_audio_mode"
         const val EXTRA_PATTERN_ID = "extra_pattern_id"
         const val EXTRA_AUTO_LEVEL = "extra_auto_level"
         const val EXTRA_LEVEL_INDEX = "extra_level_index"
         const val EXTRA_VOICE_COACH = "extra_voice_coach"
+        const val EXTRA_TRAINING_MODE = "extra_training_mode"
+        const val EXTRA_FIXED_BPM = "extra_fixed_bpm"
+        const val EXTRA_RAMP_START_BPM = "extra_ramp_start_bpm"
+        const val EXTRA_RAMP_END_BPM = "extra_ramp_end_bpm"
+        const val EXTRA_RAMP_MINUTES = "extra_ramp_minutes"
 
         private const val CHANNEL_ID = "keepapp_live_session"
         private const val NOTIFICATION_ID = 4001
@@ -160,6 +169,9 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
 
     @Volatile
     private var voiceCoachEnabled: Boolean = true
+
+    @Volatile
+    private var trainingPlan: TrainingPlanConfig = TrainingPlanConfig()
 
     @Volatile
     private var lastGpsSpeedMps: Float = 0f
@@ -247,6 +259,25 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
                     store.savePreferences(store.loadPreferences().copy(voiceCoachEnabled = voiceCoachEnabled))
                 }
             }
+            ACTION_SET_TRAINING_PLAN -> {
+                val modeName = intent.getStringExtra(EXTRA_TRAINING_MODE)
+                val mode = runCatching { TrainingMode.valueOf(modeName ?: "") }.getOrDefault(TrainingMode.ADAPTIVE_ANCHOR)
+                val plan = TrainingPlanConfig(
+                    mode = mode,
+                    fixedTargetBpm = intent.getFloatExtra(EXTRA_FIXED_BPM, 160f),
+                    rampStartBpm = intent.getFloatExtra(EXTRA_RAMP_START_BPM, 150f),
+                    rampEndBpm = intent.getFloatExtra(EXTRA_RAMP_END_BPM, 175f),
+                    rampDurationMinutes = intent.getIntExtra(EXTRA_RAMP_MINUTES, 20)
+                )
+                trainingPlan = plan
+                if (plan.mode != TrainingMode.ADAPTIVE_ANCHOR) {
+                    hasInitialCadenceLock = true
+                }
+                _liveState.value = _liveState.value.copy(trainingPlan = plan)
+                historyStore?.let { store ->
+                    store.savePreferences(store.loadPreferences().copy(trainingPlan = plan))
+                }
+            }
         }
         return START_STICKY
     }
@@ -291,6 +322,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         val prefs = (historyStore ?: SessionHistoryStore(this)).loadPreferences()
         autoLevelEnabled = prefs.autoLevelEnabled
         voiceCoachEnabled = prefs.voiceCoachEnabled
+        trainingPlan = prefs.trainingPlan
         val patterns = PatternAssetLoader.loadAll(this)
         val initialPat = patterns.find { it.id == prefs.patternId } ?: patterns.first()
         val engine = KeepAppAudioEngine(initialPattern = initialPat, config = config)
@@ -310,9 +342,14 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         requestAudioFocus()
         setupMediaSession()
 
-        hasInitialCadenceLock = false
-        engine.setMuted(true)
-        engine.setBpm(155f)
+        hasInitialCadenceLock = (trainingPlan.mode != TrainingMode.ADAPTIVE_ANCHOR)
+        if (hasInitialCadenceLock) {
+            engine.setMuted(false)
+            engine.setBpm(trainingPlan.scheduledTargetBpm(0f))
+        } else {
+            engine.setMuted(true)
+            engine.setBpm(155f)
+        }
         engine.start()
 
         // 5. Thread dedicato sensori ~100 Hz
@@ -351,6 +388,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
             appliedBtLatencyMs = appliedBtLatencyMs,
             autoLevelEnabled = autoLevelEnabled,
             voiceCoachEnabled = voiceCoachEnabled,
+            trainingPlan = trainingPlan,
             audioTelemetry = engine.telemetry.value
         )
     }
@@ -400,6 +438,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
             appliedBtLatencyMs = appliedBtLatencyMs,
             autoLevelEnabled = autoLevelEnabled,
             voiceCoachEnabled = voiceCoachEnabled,
+            trainingPlan = trainingPlan,
             lastCompletedSummary = completedSummary ?: _liveState.value.lastCompletedSummary
         )
 
@@ -455,7 +494,13 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
 
     private fun applySnapshotToAudioAndUi(snapshot: SessionFrameSnapshot) {
         val engine = audioEngine ?: return
-        metricsTracker?.onSnapshot(snapshot)
+        val plan = trainingPlan
+        val scheduledBpm = if (plan.mode != TrainingMode.ADAPTIVE_ANCHOR) {
+            plan.scheduledTargetBpm(snapshot.elapsedSeconds)
+        } else {
+            null
+        }
+        metricsTracker?.onSnapshot(snapshot, overrideTargetBpm = scheduledBpm)
         voicePlanner.onSnapshot(snapshot)?.let { announcement ->
             voiceCoach?.speak(announcement)
         }
@@ -466,6 +511,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         }
 
         val effectiveBpm = when {
+            scheduledBpm != null -> scheduledBpm
             snapshot.anchorSnapshot.targetBpm >= config.minCadenceSpm -> snapshot.anchorSnapshot.targetBpm
             snapshot.cadenceEstimate.cadenceSpm >= config.minCadenceSpm -> snapshot.cadenceEstimate.cadenceSpm
             else -> 0f
@@ -523,6 +569,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
             gpsSpeedMps = lastGpsSpeedMps,
             autoLevelEnabled = autoLevelEnabled,
             voiceCoachEnabled = voiceCoachEnabled,
+            trainingPlan = trainingPlan,
             audioTelemetry = audioTel
         )
 

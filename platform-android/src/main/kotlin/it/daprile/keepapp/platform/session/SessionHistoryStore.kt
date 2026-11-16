@@ -13,18 +13,22 @@ package it.daprile.keepapp.platform.session
 import android.content.Context
 import it.daprile.keepapp.core.audio.AudioMode
 import it.daprile.keepapp.core.format.PhonePosition
+import it.daprile.keepapp.core.session.CadenceTracePoint
 import it.daprile.keepapp.core.session.SessionSummaryRecord
+import it.daprile.keepapp.core.session.TrainingMode
+import it.daprile.keepapp.core.session.TrainingPlanConfig
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Preferenze utente salvate localmente (modalità audio, pattern scelto, livello automatico).
+ * Preferenze utente salvate localmente (modalità audio, pattern scelto, livello automatico, voice coach, piano allenamento).
  */
 data class UserAudioPreferences(
     val audioMode: AudioMode = AudioMode.RHYTHM_PATTERN,
     val patternId: String = "pulse_steady",
     val autoLevelEnabled: Boolean = true,
-    val voiceCoachEnabled: Boolean = true
+    val voiceCoachEnabled: Boolean = true,
+    val trainingPlan: TrainingPlanConfig = TrainingPlanConfig()
 )
 
 /**
@@ -39,6 +43,11 @@ class SessionHistoryStore(context: Context) {
         private const val KEY_PREF_PATTERN = "pref_pattern_id"
         private const val KEY_PREF_AUTO_LEVEL = "pref_auto_level"
         private const val KEY_PREF_VOICE_COACH = "pref_voice_coach"
+        private const val KEY_PREF_TRAIN_MODE = "pref_train_mode"
+        private const val KEY_PREF_FIXED_BPM = "pref_fixed_bpm"
+        private const val KEY_PREF_RAMP_START = "pref_ramp_start"
+        private const val KEY_PREF_RAMP_END = "pref_ramp_end"
+        private const val KEY_PREF_RAMP_MIN = "pref_ramp_min"
         private const val MAX_HISTORY_ENTRIES = 30
     }
 
@@ -50,11 +59,21 @@ class SessionHistoryStore(context: Context) {
         val patternId = prefs.getString(KEY_PREF_PATTERN, "pulse_steady") ?: "pulse_steady"
         val autoLevel = prefs.getBoolean(KEY_PREF_AUTO_LEVEL, true)
         val voiceCoach = prefs.getBoolean(KEY_PREF_VOICE_COACH, true)
+        val tModeName = prefs.getString(KEY_PREF_TRAIN_MODE, TrainingMode.ADAPTIVE_ANCHOR.name)
+        val tMode = runCatching { TrainingMode.valueOf(tModeName ?: "") }.getOrDefault(TrainingMode.ADAPTIVE_ANCHOR)
+        val plan = TrainingPlanConfig(
+            mode = tMode,
+            fixedTargetBpm = prefs.getFloat(KEY_PREF_FIXED_BPM, 160f),
+            rampStartBpm = prefs.getFloat(KEY_PREF_RAMP_START, 150f),
+            rampEndBpm = prefs.getFloat(KEY_PREF_RAMP_END, 175f),
+            rampDurationMinutes = prefs.getInt(KEY_PREF_RAMP_MIN, 20)
+        )
         return UserAudioPreferences(
             audioMode = mode,
             patternId = patternId,
             autoLevelEnabled = autoLevel,
-            voiceCoachEnabled = voiceCoach
+            voiceCoachEnabled = voiceCoach,
+            trainingPlan = plan
         )
     }
 
@@ -64,6 +83,11 @@ class SessionHistoryStore(context: Context) {
             .putString(KEY_PREF_PATTERN, preferences.patternId)
             .putBoolean(KEY_PREF_AUTO_LEVEL, preferences.autoLevelEnabled)
             .putBoolean(KEY_PREF_VOICE_COACH, preferences.voiceCoachEnabled)
+            .putString(KEY_PREF_TRAIN_MODE, preferences.trainingPlan.mode.name)
+            .putFloat(KEY_PREF_FIXED_BPM, preferences.trainingPlan.fixedTargetBpm)
+            .putFloat(KEY_PREF_RAMP_START, preferences.trainingPlan.rampStartBpm)
+            .putFloat(KEY_PREF_RAMP_END, preferences.trainingPlan.rampEndBpm)
+            .putInt(KEY_PREF_RAMP_MIN, preferences.trainingPlan.rampDurationMinutes)
             .apply()
     }
 
@@ -76,6 +100,19 @@ class SessionHistoryStore(context: Context) {
                 val obj = arr.getJSONObject(i)
                 val posName = obj.optString("dominantPosition", PhonePosition.ARM.name)
                 val pos = runCatching { PhonePosition.valueOf(posName) }.getOrDefault(PhonePosition.ARM)
+                val traceArr = obj.optJSONArray("tracePoints")
+                val trace = if (traceArr != null) {
+                    List(traceArr.length()) { k ->
+                        val pt = traceArr.getJSONObject(k)
+                        CadenceTracePoint(
+                            elapsedSec = pt.optInt("s", 0),
+                            cadenceSpm = pt.optDouble("c", 0.0).toFloat(),
+                            targetBpm = pt.optDouble("t", 0.0).toFloat()
+                        )
+                    }
+                } else {
+                    emptyList()
+                }
                 list.add(
                     SessionSummaryRecord(
                         id = obj.optString("id", ""),
@@ -90,7 +127,8 @@ class SessionHistoryStore(context: Context) {
                         dominantPosition = pos,
                         deviceName = obj.optString("deviceName", "—"),
                         appliedBtLatencyMs = obj.optDouble("appliedBtLatencyMs", 120.0).toFloat(),
-                        patternId = obj.optString("patternId", "pulse_steady")
+                        patternId = obj.optString("patternId", "pulse_steady"),
+                        tracePoints = trace
                     )
                 )
             }
@@ -117,6 +155,17 @@ class SessionHistoryStore(context: Context) {
                     put("deviceName", item.deviceName)
                     put("appliedBtLatencyMs", item.appliedBtLatencyMs.toDouble())
                     put("patternId", item.patternId)
+                    put("tracePoints", JSONArray().apply {
+                        for (pt in item.tracePoints) {
+                            put(
+                                JSONObject().apply {
+                                    put("s", pt.elapsedSec)
+                                    put("c", pt.cadenceSpm.toDouble())
+                                    put("t", pt.targetBpm.toDouble())
+                                }
+                            )
+                        }
+                    })
                 }
             )
         }
