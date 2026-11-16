@@ -130,7 +130,13 @@ data class KeepAppConfig(
     val stopVolumeRampSeconds: Float = 1.0f, // da tarare
 
     /** Durata della sosta oltre la quale si esegue un nuovo aggancio dell'ancora (D42/D22: ~120 s = 2 min) */
-    val stopRelockThresholdSeconds: Float = 120.0f // da tarare
+    val stopRelockThresholdSeconds: Float = 120.0f, // da tarare
+
+    // =========================================================================
+    // 6. CONTROLLI CUFFIE BLUETOOTH (AVRCP — Step A1.3)
+    // =========================================================================
+    /** Finestra temporale (ms) entro cui 2 click singoli valgono come doppio tocco */
+    val headsetDoubleTapWindowMs: Long = 450L
 ) {
     /**
      * Restituisce l'offset di fase provvisorio in millisecondi per la posizione indicata (D39).

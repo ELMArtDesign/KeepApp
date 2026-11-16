@@ -37,6 +37,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.os.Process
 import android.os.SystemClock
@@ -46,6 +47,8 @@ import it.daprile.keepapp.core.anchor.AnchorState
 import it.daprile.keepapp.core.audio.AudioMode
 import it.daprile.keepapp.core.config.KeepAppConfig
 import it.daprile.keepapp.core.format.PhonePosition
+import it.daprile.keepapp.core.session.HeadsetGesture
+import it.daprile.keepapp.core.session.HeadsetTapDetector
 import it.daprile.keepapp.core.session.SessionFrameSnapshot
 import it.daprile.keepapp.core.session.SessionMetricsTracker
 import it.daprile.keepapp.core.session.SessionRunState
@@ -157,6 +160,18 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
     private var metricsTracker: SessionMetricsTracker? = null
     private var voiceCoach: VoiceCoach? = null
     private val voicePlanner = VoiceAnnouncementPlanner()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val headsetTapDetector = HeadsetTapDetector(
+        doubleTapWindowMs = config.headsetDoubleTapWindowMs
+    ) { gesture, _ ->
+        when (gesture) {
+            HeadsetGesture.SINGLE_TAP -> handleTogglePause()
+            HeadsetGesture.DOUBLE_TAP -> cycleNextPattern()
+        }
+    }
+    private val pendingSingleTapRunnable = Runnable {
+        headsetTapDetector.onWindowExpired(SystemClock.elapsedRealtime())
+    }
 
     @Volatile
     private var appliedBtLatencyMs: Float = 120f
@@ -410,6 +425,8 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
 
         releaseMediaSession()
         abandonAudioFocus()
+        mainHandler.removeCallbacks(pendingSingleTapRunnable)
+        headsetTapDetector.reset()
         voiceCoach?.shutdown()
         voiceCoach = null
 
@@ -585,6 +602,31 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         }
     }
 
+    private fun onHeadsetRawSingleTap() {
+        mainHandler.post {
+            val nowMs = SystemClock.elapsedRealtime()
+            mainHandler.removeCallbacks(pendingSingleTapRunnable)
+            val openedWindow = headsetTapDetector.onSingleTap(nowMs)
+            if (openedWindow) {
+                mainHandler.postDelayed(pendingSingleTapRunnable, config.headsetDoubleTapWindowMs)
+            }
+        }
+    }
+
+    private fun cycleNextPattern() {
+        val engine = audioEngine ?: return
+        val all = PatternAssetLoader.loadAll(this)
+        if (all.isEmpty()) return
+        val curId = engine.patternEngine.currentPattern.id
+        val idx = all.indexOfFirst { it.id == curId }
+        val next = all[(idx + 1) % all.size]
+        engine.setPattern(next)
+        historyStore?.let { store ->
+            store.savePreferences(store.loadPreferences().copy(patternId = next.id))
+        }
+        updateNotification("Pattern: ${next.name}")
+    }
+
     private fun setupMediaSession() {
         val session = MediaSession(this, "KeepAppSession")
         session.setCallback(object : MediaSession.Callback() {
@@ -601,7 +643,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
                         KeyEvent.KEYCODE_MEDIA_PAUSE,
                         KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                         KeyEvent.KEYCODE_HEADSETHOOK -> {
-                            handleTogglePause()
+                            onHeadsetRawSingleTap()
                             return true
                         }
                     }
@@ -609,8 +651,8 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
                 return super.onMediaButtonEvent(mediaButtonIntent)
             }
 
-            override fun onPlay() = handleTogglePause()
-            override fun onPause() = handleTogglePause()
+            override fun onPlay() = onHeadsetRawSingleTap()
+            override fun onPause() = onHeadsetRawSingleTap()
         })
         session.setPlaybackState(
             PlaybackState.Builder()
