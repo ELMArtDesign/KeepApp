@@ -1,0 +1,69 @@
+{
+  "id": "rock_cadence",
+  "name": "Rock Cadence 4/4",
+  "description": "Groove rock deciso con rullante sul 2 e 4 e spinta in cassa.",
+  "beatsPerBar": 4,
+  "subdivisionsPerBeat": 4,
+  "levels": [
+    {
+      "level": 0,
+      "name": "Defaticamento",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 0.82, "accent": true },
+        { "step": 4, "instrument": "snare", "velocity": 0.62, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.78, "accent": false },
+        { "step": 12, "instrument": "snare", "velocity": 0.62, "accent": false }
+      ]
+    },
+    {
+      "level": 1,
+      "name": "Base",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 0.92, "accent": true },
+        { "step": 2, "instrument": "hihat", "velocity": 0.46, "accent": false },
+        { "step": 4, "instrument": "snare", "velocity": 0.80, "accent": false },
+        { "step": 6, "instrument": "hihat", "velocity": 0.46, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.90, "accent": false },
+        { "step": 10, "instrument": "kick", "velocity": 0.70, "accent": false },
+        { "step": 12, "instrument": "snare", "velocity": 0.82, "accent": false },
+        { "step": 14, "instrument": "hihat", "velocity": 0.48, "accent": false }
+      ]
+    },
+    {
+      "level": 2,
+      "name": "Spinta",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 0.96, "accent": true },
+        { "step": 0, "instrument": "hihat", "velocity": 0.55, "accent": false },
+        { "step": 2, "instrument": "hihat", "velocity": 0.52, "accent": false },
+        { "step": 4, "instrument": "kick", "velocity": 0.74, "accent": false },
+        { "step": 4, "instrument": "snare", "velocity": 0.88, "accent": false },
+        { "step": 6, "instrument": "hihat", "velocity": 0.54, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.94, "accent": false },
+        { "step": 10, "instrument": "kick", "velocity": 0.82, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.74, "accent": false },
+        { "step": 12, "instrument": "snare", "velocity": 0.90, "accent": false },
+        { "step": 14, "instrument": "hihat", "velocity": 0.58, "accent": false }
+      ]
+    },
+    {
+      "level": 3,
+      "name": "Rinforzo",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 1.00, "accent": true },
+        { "step": 0, "instrument": "accent", "velocity": 0.84, "accent": true },
+        { "step": 2, "instrument": "hihat", "velocity": 0.62, "accent": false },
+        { "step": 4, "instrument": "kick", "velocity": 0.85, "accent": false },
+        { "step": 4, "instrument": "snare", "velocity": 0.94, "accent": false },
+        { "step": 6, "instrument": "hihat", "velocity": 0.62, "accent": false },
+        { "step": 7, "instrument": "kick", "velocity": 0.64, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.98, "accent": true },
+        { "step": 10, "instrument": "kick", "velocity": 0.88, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.85, "accent": false },
+        { "step": 12, "instrument": "snare", "velocity": 0.95, "accent": false },
+        { "step": 14, "instrument": "hihat", "velocity": 0.66, "accent": false },
+        { "step": 15, "instrument": "snare", "velocity": 0.58, "accent": false }
+      ]
+    }
+  ]
+}

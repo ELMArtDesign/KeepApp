@@ -280,7 +280,23 @@ class CadenceEstimator(
         }
 
         val fractionalLag = parabolicInterpolateLag(r, chosenLag)
-        val rawSpm = ((60f * effectiveFs) / fractionalLag).coerceIn(config.minCadenceSpm, config.maxCadenceSpm)
+        var rawSpm = ((60f * effectiveFs) / fractionalLag).coerceIn(config.minCadenceSpm, config.maxCadenceSpm)
+
+        // Guardia anti-dimezzamento (Fase 1B): in HAND/POCKET evita crolli improvvisi sulla sub-armonica
+        // (es. ~68 BPM di falcata rispetto a ~110-136 SPM reali durante rallentamenti o curve)
+        val isAsymmetric = (position == PhonePosition.HAND || position == PhonePosition.POCKET)
+        if (isAsymmetric && heldCadenceSpm >= 90f && rawSpm < heldCadenceSpm * 0.62f) {
+            val doubled = rawSpm * 2f
+            if (doubled <= config.maxCadenceSpm &&
+                (lastStepDetectorSpm <= 0f || abs(doubled - lastStepDetectorSpm) <= abs(rawSpm - lastStepDetectorSpm))
+            ) {
+                rawSpm = doubled
+            } else {
+                // Scarta il salto sub-armonico spurio mantenendo la cadenza agganciata
+                lastConfidence = 0f
+                return
+            }
+        }
 
         val energyFactor = ((lastDynamicRms - config.minDynamicAccelRmsMps2) / 1.1f).coerceIn(0.45f, 1.0f)
         val stepAgreementBonus = if (lastStepDetectorSpm > 0f && abs(rawSpm - lastStepDetectorSpm) <= 8f) 0.14f else 0f

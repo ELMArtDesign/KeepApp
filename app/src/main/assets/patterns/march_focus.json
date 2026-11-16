@@ -1,0 +1,60 @@
+{
+  "id": "march_focus",
+  "name": "Marcia Focus 4/4",
+  "description": "Ritmo pulito e minimale con legnetto e cassa per la massima concentrazione.",
+  "beatsPerBar": 4,
+  "subdivisionsPerBeat": 4,
+  "levels": [
+    {
+      "level": 0,
+      "name": "Defaticamento",
+      "hits": [
+        { "step": 0, "instrument": "accent", "velocity": 0.72, "accent": true },
+        { "step": 4, "instrument": "kick", "velocity": 0.65, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.70, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.65, "accent": false }
+      ]
+    },
+    {
+      "level": 1,
+      "name": "Base",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 0.90, "accent": true },
+        { "step": 0, "instrument": "accent", "velocity": 0.75, "accent": true },
+        { "step": 4, "instrument": "kick", "velocity": 0.80, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.86, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.80, "accent": false }
+      ]
+    },
+    {
+      "level": 2,
+      "name": "Spinta",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 0.95, "accent": true },
+        { "step": 0, "instrument": "accent", "velocity": 0.85, "accent": true },
+        { "step": 4, "instrument": "kick", "velocity": 0.88, "accent": false },
+        { "step": 4, "instrument": "accent", "velocity": 0.45, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.92, "accent": false },
+        { "step": 8, "instrument": "accent", "velocity": 0.62, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.88, "accent": false },
+        { "step": 12, "instrument": "accent", "velocity": 0.45, "accent": false }
+      ]
+    },
+    {
+      "level": 3,
+      "name": "Rinforzo",
+      "hits": [
+        { "step": 0, "instrument": "kick", "velocity": 1.00, "accent": true },
+        { "step": 0, "instrument": "accent", "velocity": 0.94, "accent": true },
+        { "step": 2, "instrument": "accent", "velocity": 0.40, "accent": false },
+        { "step": 4, "instrument": "kick", "velocity": 0.92, "accent": false },
+        { "step": 4, "instrument": "snare", "velocity": 0.75, "accent": false },
+        { "step": 8, "instrument": "kick", "velocity": 0.96, "accent": true },
+        { "step": 8, "instrument": "accent", "velocity": 0.78, "accent": false },
+        { "step": 10, "instrument": "accent", "velocity": 0.40, "accent": false },
+        { "step": 12, "instrument": "kick", "velocity": 0.92, "accent": false },
+        { "step": 12, "instrument": "snare", "velocity": 0.78, "accent": false }
+      ]
+    }
+  ]
+}
