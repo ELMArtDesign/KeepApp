@@ -28,6 +28,13 @@ application {
     mainClass.set("it.daprile.keepapp.replay.ReplayMainKt")
 }
 
+tasks.test {
+    useTestNG()
+}
+
 dependencies {
     implementation(project(":core-domain"))
+
+    testImplementation("org.jetbrains.kotlin:kotlin-test-testng:2.2.20")
+    testImplementation("org.testng:testng:7.10.2")
 }
