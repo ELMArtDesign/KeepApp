@@ -26,4 +26,20 @@
 ### Validazione a Orecchio della Latenza Calibrata
 | Verifica | Procedura | Esito | Stato |
 | :--- | :--- | :--- | :---: |
-| **Confronto a orecchio altoparlante vs cuffia (`153,4 ms` ON / OFF)** | Emettere un click di riferimento sull'altoparlante del telefono e un click compensato di `-153,4 ms` sulle `MANKIW-X15`: con compensazione **ON** i due click devono risultare sovrapposti, con **OFF** la cuffia deve risultare chiaramente in ritardo | *Non ancora eseguito* | ⏳ **DA FARE** |
+| **Confronto a orecchio altoparlante vs cuffia (`153,4 ms` ON / OFF)** | Emettere un click di riferimento sull'altoparlante del telefono e un click compensato sulle `MANKIW-X15` (esiti con totale applicato in ms) | `3,4 ms` → prima telefono; `38,4 ms` → prima telefono; `73,4 ms` → **1 colpo**; `78,4 ms` (×2) → **1 colpo**; `193,4 ms` → prima cuffia; `218,4 ms` → prima cuffia; `298,4 ms` → prima cuffia. Fusione percettiva intorno a **`~75 ms`** (da restringere nella finestra `90–130 ms`). | ⏳ **IN CORSO** *(manca misura `X` altoparlante + finestra `90–130 ms`)* |
+| **Controllo loopback D35 altoparlante interno (`X`)** | Stesso metodo `AudioTrack.getTimestamp()` + `AudioRecord` su `TIMEBASE_BOOTTIME` forzato su `TYPE_BUILTIN_SPEAKER` (`USAGE_ASSISTANCE_SONIFICATION`) | Pulsante `"Verifica ritardo altoparlante interno (X)"` aggiunto nella scheda Calibrazione | ⏳ **DA ESEGUIRE** |
+
+### Riconciliazione Numeri (153,4 ms vs ~75 ms a orecchio vs +62,3 ms replay `171619`)
+1. **Convenzione di segno (verificata identica tra replay e app live):**
+   - **Replay (`SessionReplayEngine.kt`):** `earNs = outNs + btLatencyNs` e `signedErrMs = (earNs - refFootstrikesNs) / 1e6`. **Positivo (`+`) = colpo all'orecchio DOPO l'appoggio di riferimento (in ritardo)**; negativo (`-`) = in anticipo.
+   - **Scheduling (`BeatScheduler.kt`):** `targetEmissionNs = predictedFootstrikeNs - btLatencyNs - positionOffsetNs` (**sottrae** `btLatencyNs`, sia nel replay sia nell'app live via `KeepAppSessionService → KeepAppAudioEngine → BeatScheduler`).
+2. **Scomposizione del `+62,3 ms` nella sessione `171619`:**
+   - **Latenza BT (`153,4 ms`):** nel replay si **annulla** esattamente (`targetEmissionNs` la sottrae, `earNs = outNs + btLatencyNs` la risomma). Quindi il `+62,3 ms` del replay **non** indica che serva una compensazione BT maggiore.
+   - **Ritardo di gruppo del filtro causale (`CadenceEstimator`):** il passa-banda Butterworth causale (`0,5–5,0 Hz` @ `104,05 Hz`) introduce un ritardo di fase di **`+103,3 ms` @ 90 SPM**, **`+80,5 ms` @ 120 SPM**, **`+71,5 ms` @ 150 SPM** rispetto al riferimento offline non causale (`FootstrikeReferenceDetector`, ritardo `0 ms`).
+   - **Doppia sottrazione di `positionOffsetMs` (bug individuato):** `PhaseTracker.kt` sottrae già `positionOffsetNs` da `prevTimestampNs`, e `BeatScheduler.kt` lo sottrae **una seconda volta**. Nella `171619` (classificata al 78% come `WAIST`, `8 ms`), la doppia sottrazione anticipa di `2 × 8 ms = -16,0 ms`.
+   - **Bilancio:** `+80,5 ms` (ritardo filtro causale ~120 SPM) `- 16,0 ms` (doppia sottrazione `WAIST`) = **`+64,5 ms`**, coerente con i **`+62,3 ms`** misurati dal replay.
+   - **Ritardo FIFO sensori (D36) e lag meccanico piede→braccio:** non entrano in questo confronto replay perché `SensorEvent.timestamp` è il timestamp hardware dell'evento (non l'arrivo del batch FIFO) e `FootstrikeReferenceDetector` usa lo stesso segnale IMU.
+3. **Proposta motivata per il valore di calibrazione da usare:**
+   - Mantenere provvisoriamente **`153,4 ms`** salvati finché Adriano non misura **`X`** sull'altoparlante interno e completa la finestra **`90–130 ms`** nella prova a orecchio.
+   - Se `X` risulterà `~75 ms`, allora `BT_reale - X ≈ 153,4 - 75 ≈ 78 ms` spiegherà direttamente la fusione percettiva a `~75 ms` confermando `153,4 ms`. Se invece `X` fosse piccolo (`< 20 ms`), il ritardo BT effettivo (inclusa la catena `USAGE_MEDIA` vs `USAGE_ASSISTANCE_SONIFICATION`) andrà tarato sulla media tra `~75 ms` e la nuova finestra `90–130 ms`.
+   - Indipendentemente dal valore BT, nel codice di fase va poi compensato il ritardo di gruppo del filtro passa-banda (`~72–80 ms`) ed eliminata la doppia sottrazione di `positionOffsetNs`.

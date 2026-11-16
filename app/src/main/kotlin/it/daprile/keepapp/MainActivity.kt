@@ -11,10 +11,16 @@
 package it.daprile.keepapp
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -109,7 +115,7 @@ class MainActivity : ComponentActivity() {
 
         patterns = PatternAssetLoader.loadAll(this)
         manualAudioEngine = KeepAppAudioEngine(initialPattern = patterns.first())
-        calibrator = BluetoothLatencyCalibrator()
+        calibrator = BluetoothLatencyCalibrator(context = this)
         earSyncTester = EarSyncTester(this)
 
         // Step A0: congela le funzioni sperimentali se i rispettivi FeatureFlags sono disattivati
@@ -218,6 +224,12 @@ class MainActivity : ComponentActivity() {
                             earSyncTester.stop()
                             calibrator.startTapToBeatCalibration()
                         },
+                        onStartSpeakerCheck = {
+                            KeepAppSessionService.stopSession(this)
+                            manualAudioEngine.stop()
+                            earSyncTester.stop()
+                            calibrator.startSpeakerLoopbackCheck()
+                        },
                         onUserTap = { calibrator.registerUserTap() },
                         onCancelCalibration = { calibrator.cancel() },
                         onStartEarSync = { advanceMs ->
@@ -267,6 +279,7 @@ private fun KeepAppMainScreen(
     onAttenuatedChange: (Boolean) -> Unit,
     onStartContactCalibration: () -> Unit,
     onStartTapCalibration: () -> Unit,
+    onStartSpeakerCheck: () -> Unit,
     onUserTap: () -> Unit,
     onCancelCalibration: () -> Unit,
     onStartEarSync: (Float) -> Unit,
@@ -423,6 +436,7 @@ private fun KeepAppMainScreen(
                 profileStore = profileStore,
                 onStartContactCalibration = onStartContactCalibration,
                 onStartTapCalibration = onStartTapCalibration,
+                onStartSpeakerCheck = onStartSpeakerCheck,
                 onUserTap = onUserTap,
                 onCancelCalibration = onCancelCalibration,
                 onStartEarSync = onStartEarSync,
@@ -1110,6 +1124,7 @@ private fun BluetoothCalibrationTab(
     profileStore: BtLatencyProfileStore,
     onStartContactCalibration: () -> Unit,
     onStartTapCalibration: () -> Unit,
+    onStartSpeakerCheck: () -> Unit,
     onUserTap: () -> Unit,
     onCancelCalibration: () -> Unit,
     onStartEarSync: (Float) -> Unit,
@@ -1125,12 +1140,21 @@ private fun BluetoothCalibrationTab(
     var earCompensationOn by remember { mutableStateOf(true) }
     var earFineTuneMs by remember { mutableFloatStateOf(0f) }
     var earCheckLogs by remember { mutableStateOf(profileStore.loadEarCheckLogs()) }
+    var earLogExportStatus by remember { mutableStateOf("") }
+    var pendingSpeakerCheck by remember { mutableStateOf(false) }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            onStartContactCalibration()
+            if (pendingSpeakerCheck) {
+                pendingSpeakerCheck = false
+                onStartSpeakerCheck()
+            } else {
+                onStartContactCalibration()
+            }
+        } else {
+            pendingSpeakerCheck = false
         }
     }
 
@@ -1229,6 +1253,25 @@ private fun BluetoothCalibrationTab(
                     Text("2. Calibrazione battendo a tempo")
                 }
 
+                OutlinedButton(
+                    onClick = {
+                        val hasMic = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.RECORD_AUDIO
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (hasMic) {
+                            onStartSpeakerCheck()
+                        } else {
+                            pendingSpeakerCheck = true
+                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    enabled = !calibState.isRunning,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Verifica ritardo altoparlante interno (X)")
+                }
+
                 if (calibState.isRunning) {
                     val progress = if (calibState.totalSteps > 0) {
                         calibState.progressStep.toFloat() / calibState.totalSteps.toFloat()
@@ -1297,7 +1340,14 @@ private fun BluetoothCalibrationTab(
                     modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Risultato Calibrazione", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (calibState.isSpeakerCheck) {
+                            "Risultato Altoparlante Interno (X)"
+                        } else {
+                            "Risultato Calibrazione"
+                        },
+                        fontWeight = FontWeight.Bold
+                    )
                     Text(
                         text = String.format(
                             Locale.US,
@@ -1310,22 +1360,24 @@ private fun BluetoothCalibrationTab(
                         ),
                         fontFamily = FontFamily.Monospace
                     )
-                    Button(
-                        onClick = {
-                            val profile = SavedBtLatencyProfile(
-                                deviceKey = activeDevice.key,
-                                deviceName = activeDevice.displayName,
-                                latencyMs = res.medianLatencyMs,
-                                stdDevMs = res.stdDevMs,
-                                method = res.method,
-                                calibratedAtMs = System.currentTimeMillis()
-                            )
-                            profileStore.save(profile)
-                            savedProfile = profile
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("SALVA PROFILO PER ${activeDevice.displayName}")
+                    if (!calibState.isSpeakerCheck) {
+                        Button(
+                            onClick = {
+                                val profile = SavedBtLatencyProfile(
+                                    deviceKey = activeDevice.key,
+                                    deviceName = activeDevice.displayName,
+                                    latencyMs = res.medianLatencyMs,
+                                    stdDevMs = res.stdDevMs,
+                                    method = res.method,
+                                    calibratedAtMs = System.currentTimeMillis()
+                                )
+                                profileStore.save(profile)
+                                savedProfile = profile
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("SALVA PROFILO PER ${activeDevice.displayName}")
+                        }
                     }
                 }
             }
@@ -1506,31 +1558,94 @@ private fun BluetoothCalibrationTab(
 
                 if (earCheckLogs.isNotEmpty()) {
                     Text(
-                        text = "Registro prove (${earCheckLogs.size}):",
+                        text = "Registro prove (${earCheckLogs.size} totali, ultimi 10 mostrati):",
                         fontWeight = FontWeight.Medium,
                         style = MaterialTheme.typography.bodySmall
                     )
+                    val formatLogEntry: (EarCheckLogEntry) -> String = { entry ->
+                        val compLabel = if (entry.compensationOn) "ON" else "OFF"
+                        String.format(
+                            Locale.US,
+                            "%s | %s | Comp:%s Fine:%+.0f ms (Tot:%.1f ms) -> %s",
+                            logTimeFmt.format(Date(entry.timestampMs)),
+                            entry.deviceName,
+                            compLabel,
+                            entry.fineTuneMs,
+                            entry.totalAppliedMs,
+                            entry.outcome
+                        )
+                    }
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         earCheckLogs.take(10).forEach { entry ->
-                            val compLabel = if (entry.compensationOn) "ON" else "OFF"
                             Text(
-                                text = String.format(
-                                    Locale.US,
-                                    "%s | %s | Comp:%s Fine:%+.0f ms (Tot:%.1f ms) -> %s",
-                                    logTimeFmt.format(Date(entry.timestampMs)),
-                                    entry.deviceName,
-                                    compLabel,
-                                    entry.fineTuneMs,
-                                    entry.totalAppliedMs,
-                                    entry.outcome
-                                ),
+                                text = formatLogEntry(entry),
                                 fontFamily = FontFamily.Monospace,
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
                     }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                val fullText = earCheckLogs.joinToString("\n") { formatLogEntry(it) }
+                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                cm.setPrimaryClip(ClipData.newPlainText("KeepApp Prova a orecchio", fullText))
+                                earLogExportStatus = "Copiati tutti i ${earCheckLogs.size} esiti negli appunti."
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Copia tutto")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                val fullText = earCheckLogs.joinToString("\n") { formatLogEntry(it) } + "\n"
+                                val fileName = "keepapp_prova_orecchio_${System.currentTimeMillis() / 1000}.txt"
+                                earLogExportStatus = exportTextToDownloads(context, fileName, fullText)
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Esporta in Download")
+                        }
+                    }
+                    if (earLogExportStatus.isNotEmpty()) {
+                        Text(
+                            text = earLogExportStatus,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+private fun exportTextToDownloads(context: Context, fileName: String, content: String): String {
+    return try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: return "Errore: impossibile creare file in Download."
+            context.contentResolver.openOutputStream(uri)?.use { os ->
+                os.write(content.toByteArray(Charsets.UTF_8))
+            }
+            "Esportato in Download/$fileName"
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            dir.mkdirs()
+            val out = java.io.File(dir, fileName)
+            out.writeText(content, Charsets.UTF_8)
+            "Esportato in ${out.absolutePath}"
+        }
+    } catch (t: Throwable) {
+        "Errore esportazione: ${t.message}"
     }
 }

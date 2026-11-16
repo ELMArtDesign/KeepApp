@@ -11,7 +11,9 @@
 package it.daprile.keepapp.platform.audio
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
@@ -37,6 +39,7 @@ import kotlin.math.sin
 data class CalibrationUiState(
     val isRunning: Boolean = false,
     val method: CalibrationMethod? = null,
+    val isSpeakerCheck: Boolean = false,
     val progressStep: Int = 0,
     val totalSteps: Int = 0,
     val statusMessage: String = "Pronto per la calibrazione",
@@ -54,6 +57,7 @@ data class CalibrationUiState(
  *   in sincronia con ciò che sente in cuffia).
  */
 class BluetoothLatencyCalibrator(
+    private val context: Context? = null,
     private val sampleRateHz: Int = DrumSynthWavetable.SAMPLE_RATE_HZ
 ) {
     companion object {
@@ -84,11 +88,31 @@ class BluetoothLatencyCalibrator(
         _state.value = CalibrationUiState(
             isRunning = true,
             method = CalibrationMethod.CONTACT_IMPULSE,
+            isSpeakerCheck = false,
             progressStep = 0,
             totalSteps = CONTACT_IMPULSE_COUNT,
             statusMessage = "Appoggia le cuffie al microfono: misuro il rumore di fondo..."
         )
-        workerThread = Thread({ runContactCalibration() }, "KeepApp-BtCalib-Contact").also { it.start() }
+        workerThread = Thread({ runContactCalibration(targetSpeaker = false) }, "KeepApp-BtCalib-Contact").also { it.start() }
+    }
+
+    /**
+     * Esegue la stessa misura di loopback (D35) sull'altoparlante interno del telefono (`TYPE_BUILTIN_SPEAKER`)
+     * per misurare l'eventuale ritardo hardware X dell'altoparlante stesso.
+     */
+    @Synchronized
+    fun startSpeakerLoopbackCheck() {
+        if (running) return
+        running = true
+        _state.value = CalibrationUiState(
+            isRunning = true,
+            method = CalibrationMethod.CONTACT_IMPULSE,
+            isSpeakerCheck = true,
+            progressStep = 0,
+            totalSteps = CONTACT_IMPULSE_COUNT,
+            statusMessage = "Verifica altoparlante interno (X): stanza silenziosa, misuro il rumore di fondo..."
+        )
+        workerThread = Thread({ runContactCalibration(targetSpeaker = true) }, "KeepApp-SpkCheck-Contact").also { it.start() }
     }
 
     /**
@@ -104,6 +128,7 @@ class BluetoothLatencyCalibrator(
         _state.value = CalibrationUiState(
             isRunning = true,
             method = CalibrationMethod.TAP_TO_BEAT,
+            isSpeakerCheck = false,
             progressStep = 0,
             totalSteps = TAP_BEAT_COUNT,
             statusMessage = "Ascolta i primi 2 colpi, poi batti il dito a tempo sul pulsante!"
@@ -142,7 +167,7 @@ class BluetoothLatencyCalibrator(
     }
 
     @SuppressLint("MissingPermission")
-    private fun runContactCalibration() {
+    private fun runContactCalibration(targetSpeaker: Boolean = false) {
         try {
             Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
         } catch (_: Throwable) {
@@ -183,7 +208,15 @@ class BluetoothLatencyCalibrator(
             return
         }
 
-        val track = createOutputTrack()
+        val track = createOutputTrack(targetSpeaker)
+        if (targetSpeaker && context != null) {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            val spk = am?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                ?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+            if (spk != null) {
+                track.preferredDevice = spk
+            }
+        }
         val trackEstimator = AudioClockEstimator(sampleRateHz)
         val recEstimator = AudioClockEstimator(sampleRateHz)
         val trackTs = AudioTimestamp()
@@ -358,7 +391,7 @@ class BluetoothLatencyCalibrator(
         } catch (_: Throwable) {
         }
 
-        val track = createOutputTrack()
+        val track = createOutputTrack(targetSpeaker = false)
         val trackEstimator = AudioClockEstimator(sampleRateHz)
         val trackTs = AudioTimestamp()
         val beatClick = buildProbeImpulse(sampleRateHz, freqHz = 1000.0, durationMs = 14)
@@ -451,19 +484,25 @@ class BluetoothLatencyCalibrator(
         }
     }
 
-    private fun createOutputTrack(): AudioTrack {
+    private fun createOutputTrack(targetSpeaker: Boolean = false): AudioTrack {
         val minBuf = AudioTrack.getMinBufferSize(
             sampleRateHz,
             AudioFormat.CHANNEL_OUT_MONO,
             AudioFormat.ENCODING_PCM_16BIT
         )
+        val attrs = if (targetSpeaker) {
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+        } else {
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build()
+        }
         return AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
-            )
+            .setAudioAttributes(attrs)
             .setAudioFormat(
                 AudioFormat.Builder()
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
