@@ -106,6 +106,18 @@ class MainActivity : ComponentActivity() {
         patterns = PatternAssetLoader.loadAll(this)
         manualAudioEngine = KeepAppAudioEngine(initialPattern = patterns.first())
         calibrator = BluetoothLatencyCalibrator()
+
+        // Step A0: congela le funzioni sperimentali se i rispettivi FeatureFlags sono disattivati
+        val prefStore = SessionHistoryStore(this)
+        val curPrefs = prefStore.loadPreferences()
+        if (!FeatureFlags.ENABLE_TRAINING_PLAN || !FeatureFlags.ENABLE_VOICE_COACH_TTS) {
+            prefStore.savePreferences(
+                curPrefs.copy(
+                    voiceCoachEnabled = if (FeatureFlags.ENABLE_VOICE_COACH_TTS) curPrefs.voiceCoachEnabled else false,
+                    trainingPlan = if (FeatureFlags.ENABLE_TRAINING_PLAN) curPrefs.trainingPlan else TrainingPlanConfig()
+                )
+            )
+        }
         profileStore = BtLatencyProfileStore(this)
 
         setContent {
@@ -512,13 +524,15 @@ private fun LiveSessionTab(
                     Switch(checked = liveState.autoLevelEnabled, onCheckedChange = onToggleAutoLevel)
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Avvisi Vocali Discreti (TTS)")
-                    Switch(checked = liveState.voiceCoachEnabled, onCheckedChange = onToggleVoiceCoach)
+                if (FeatureFlags.ENABLE_VOICE_COACH_TTS) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Avvisi Vocali Discreti (TTS)")
+                        Switch(checked = liveState.voiceCoachEnabled, onCheckedChange = onToggleVoiceCoach)
+                    }
                 }
 
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -533,23 +547,25 @@ private fun LiveSessionTab(
             }
         }
 
-        val ctx = LocalContext.current
-        TrainingPlanCard(
-            initialPlan = liveState.trainingPlan,
-            onPlanChanged = { plan ->
-                val store = SessionHistoryStore(ctx)
-                store.savePreferences(store.loadPreferences().copy(trainingPlan = plan))
-                ctx.startService(
-                    Intent(ctx, KeepAppSessionService::class.java)
-                        .setAction(KeepAppSessionService.ACTION_SET_TRAINING_PLAN)
-                        .putExtra(KeepAppSessionService.EXTRA_TRAINING_MODE, plan.mode.name)
-                        .putExtra(KeepAppSessionService.EXTRA_FIXED_BPM, plan.fixedTargetBpm)
-                        .putExtra(KeepAppSessionService.EXTRA_RAMP_START_BPM, plan.rampStartBpm)
-                        .putExtra(KeepAppSessionService.EXTRA_RAMP_END_BPM, plan.rampEndBpm)
-                        .putExtra(KeepAppSessionService.EXTRA_RAMP_MINUTES, plan.rampDurationMinutes)
-                )
-            }
-        )
+        if (FeatureFlags.ENABLE_TRAINING_PLAN) {
+            val ctx = LocalContext.current
+            TrainingPlanCard(
+                initialPlan = liveState.trainingPlan,
+                onPlanChanged = { plan ->
+                    val store = SessionHistoryStore(ctx)
+                    store.savePreferences(store.loadPreferences().copy(trainingPlan = plan))
+                    ctx.startService(
+                        Intent(ctx, KeepAppSessionService::class.java)
+                            .setAction(KeepAppSessionService.ACTION_SET_TRAINING_PLAN)
+                            .putExtra(KeepAppSessionService.EXTRA_TRAINING_MODE, plan.mode.name)
+                            .putExtra(KeepAppSessionService.EXTRA_FIXED_BPM, plan.fixedTargetBpm)
+                            .putExtra(KeepAppSessionService.EXTRA_RAMP_START_BPM, plan.rampStartBpm)
+                            .putExtra(KeepAppSessionService.EXTRA_RAMP_END_BPM, plan.rampEndBpm)
+                            .putExtra(KeepAppSessionService.EXTRA_RAMP_MINUTES, plan.rampDurationMinutes)
+                    )
+                }
+            )
+        }
 
         // Telemetria Bluetooth & AudioEngine
         Card(
