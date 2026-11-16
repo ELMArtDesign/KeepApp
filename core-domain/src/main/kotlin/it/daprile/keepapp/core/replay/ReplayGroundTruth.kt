@@ -278,6 +278,6 @@ private class SimpleReplayJsonParser(private val src: String) {
     private fun peek(): Char = if (pos < src.length) src[pos] else '\u0000'
 
     private fun skipWs() {
-        while (pos < src.length && src[pos].isWhitespace()) pos++
+        while (pos < src.length && (src[pos].isWhitespace() || src[pos] == '\uFEFF')) pos++
     }
 }
