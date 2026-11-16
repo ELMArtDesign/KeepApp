@@ -123,7 +123,7 @@ data class SessionReplayReport(
         appendLine(" Dispositivo / Config : ${manifest.deviceModel} (hash $configHash)")
         appendLine(" Posizione dichiarata : ${manifest.position.labelIt} -> Stimata: ${dominantPosition.labelIt} (cambi: $positionChangesCount)")
         appendLine(String.format(Locale.US, " Durata analizzata    : %.2f s (%d record) | Elaborazione: %d ms", durationSeconds, totalRecordsRead, processingTimeMs))
-        appendLine(String.format(Locale.US, " Cadenza media/mediana: %.2f / %.2f SPM | Integrale passi: %.1f", meanCadenceSpm, medianCadenceSpm, integratedCadenceSteps))
+        appendLine(String.format(Locale.US, " Cadenza media/mediana: %.2f / %.2f SPM | Integrale passi: %.1f (Ref offline: %d)", meanCadenceSpm, medianCadenceSpm, integratedCadenceSteps, referenceFootstrikesCount))
         if (cadenceErrorPct != null) {
             appendLine(String.format(Locale.US, " Errore cadenza       : %+.2f%% (StepDetector sistema: %+.2f%%)", cadenceErrorPct, systemStepDetectorErrorPct ?: 0f))
         }

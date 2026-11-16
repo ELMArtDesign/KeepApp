@@ -158,11 +158,15 @@ private fun buildMarkdownSummary(
     appendLine()
     appendLine("## Tabella Sessioni")
     appendLine()
-    appendLine("| Sessione | Durata (s) | Err. Cadenza | Err. StepDet | Fase Med / P90 / Segno (ms) | Aggancio (s) | Soste (False/Manc.) | Salti >5% (Stima/Target) | Conf. Bassa (%) | Posizione Stimata (Cambi) | Soglie 1A |")
-    appendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- | :---: |")
+    appendLine("| Sessione | Durata (s) | Err. Cadenza | Err. StepDet | PROXY (Stima vs Ref) | Fase Med / P90 / Segno (ms) | Aggancio (s) | Soste (False/Manc.) | Salti >5% (Stima/Target) | Conf. Bassa (%) | Posizione Stimata (Cambi) | Soglie 1A |")
+    appendLine("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- | :---: |")
     for (r in reports) {
         val cadErr = r.cadenceErrorPct?.let { String.format(Locale.US, "%+.2f%%", it) } ?: "n/d"
         val sysErr = r.systemStepDetectorErrorPct?.let { String.format(Locale.US, "%+.2f%%", it) } ?: "n/d"
+        val proxyStr = if (r.referenceFootstrikesCount > 0) {
+            val proxyPct = ((r.integratedCadenceSteps - r.referenceFootstrikesCount) / r.referenceFootstrikesCount.toFloat()) * 100f
+            String.format(Locale.US, "%.0f vs %d (%+.1f%%)", r.integratedCadenceSteps, r.referenceFootstrikesCount, proxyPct)
+        } else "n/d"
         val phaseStr = String.format(Locale.US, "%.1f / %.1f / %+.1f", r.phaseErrorMedianAbsMs, r.phaseErrorP90AbsMs, r.phaseErrorMeanSignedMs)
         val lockStr = r.lockTimeSeconds?.let { String.format(Locale.US, "%.1f", it) } ?: "n/d"
         val stopsStr = "${r.totalStopsDetected} (${r.falseStopsCount}/${r.missedStopsCount?.toString() ?: "n/d"})"
@@ -177,11 +181,12 @@ private fun buildMarkdownSummary(
         appendLine(
             String.format(
                 Locale.US,
-                "| `%s` | %.1f | %s | %s | %s | %s | %s | %s | %s | %s | %s |",
+                "| `%s` | %.1f | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |",
                 r.manifest.sessionFolder,
                 r.durationSeconds,
                 cadErr,
                 sysErr,
+                proxyStr,
                 phaseStr,
                 lockStr,
                 stopsStr,
@@ -214,6 +219,7 @@ private fun buildJsonSummary(
         appendLine("      \"session_id\": \"${r.manifest.sessionFolder}\",")
         appendLine(String.format(Locale.US, "      \"duration_seconds\": %.3f,", r.durationSeconds))
         appendLine("      \"reference_steps\": ${r.groundTruth?.steps ?: "null"},")
+        appendLine("      \"proxy_ref_footstrikes\": ${r.referenceFootstrikesCount},")
         appendLine(String.format(Locale.US, "      \"integrated_cadence_steps\": %.2f,", r.integratedCadenceSteps))
         appendLine("      \"cadence_error_pct\": ${r.cadenceErrorPct?.let { String.format(Locale.US, "%.3f", it) } ?: "null"},")
         appendLine("      \"system_step_detector_error_pct\": ${r.systemStepDetectorErrorPct?.let { String.format(Locale.US, "%.3f", it) } ?: "null"},")
