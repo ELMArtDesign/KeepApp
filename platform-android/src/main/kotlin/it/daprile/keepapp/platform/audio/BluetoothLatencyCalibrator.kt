@@ -58,7 +58,7 @@ class BluetoothLatencyCalibrator(
 ) {
     companion object {
         private const val CHUNK_FRAMES = 480 // 10 ms
-        private const val CONTACT_IMPULSE_COUNT = 5
+        private const val CONTACT_IMPULSE_COUNT = 8 // D43: almeno 8 impulsi con mediana e MAD
         private const val CONTACT_PERIOD_MS = 1100
         private const val TAP_BEAT_COUNT = 16
         private const val TAP_PERIOD_MS = 500 // 120 BPM

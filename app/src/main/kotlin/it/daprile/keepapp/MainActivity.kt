@@ -79,6 +79,9 @@ import it.daprile.keepapp.platform.audio.AudioEngineTelemetry
 import it.daprile.keepapp.platform.audio.BluetoothLatencyCalibrator
 import it.daprile.keepapp.platform.audio.BtLatencyProfileStore
 import it.daprile.keepapp.platform.audio.CalibrationUiState
+import it.daprile.keepapp.platform.audio.EarCheckLogEntry
+import it.daprile.keepapp.platform.audio.EarSyncTester
+import it.daprile.keepapp.platform.audio.EarSyncUiState
 import it.daprile.keepapp.platform.audio.KeepAppAudioEngine
 import it.daprile.keepapp.platform.audio.PatternAssetLoader
 import it.daprile.keepapp.platform.audio.SavedBtLatencyProfile
@@ -99,6 +102,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var manualAudioEngine: KeepAppAudioEngine
     private lateinit var calibrator: BluetoothLatencyCalibrator
     private lateinit var profileStore: BtLatencyProfileStore
+    private lateinit var earSyncTester: EarSyncTester
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -106,6 +110,7 @@ class MainActivity : ComponentActivity() {
         patterns = PatternAssetLoader.loadAll(this)
         manualAudioEngine = KeepAppAudioEngine(initialPattern = patterns.first())
         calibrator = BluetoothLatencyCalibrator()
+        earSyncTester = EarSyncTester(this)
 
         // Step A0: congela le funzioni sperimentali se i rispettivi FeatureFlags sono disattivati
         val prefStore = SessionHistoryStore(this)
@@ -129,12 +134,14 @@ class MainActivity : ComponentActivity() {
                     val liveState by KeepAppSessionService.liveState.collectAsState()
                     val manualTelemetry by manualAudioEngine.telemetry.collectAsState()
                     val calibState by calibrator.state.collectAsState()
+                    val earSyncState by earSyncTester.state.collectAsState()
 
                     KeepAppMainScreen(
                         patterns = patterns,
                         liveState = liveState,
                         manualTelemetry = manualTelemetry,
                         calibState = calibState,
+                        earSyncState = earSyncState,
                         profileStore = profileStore,
                         onToggleLiveSession = {
                             if (liveState.isActive) {
@@ -142,6 +149,7 @@ class MainActivity : ComponentActivity() {
                             } else {
                                 manualAudioEngine.stop()
                                 calibrator.cancel()
+                                earSyncTester.stop()
                                 KeepAppSessionService.startSession(this)
                             }
                         },
@@ -187,6 +195,7 @@ class MainActivity : ComponentActivity() {
                             } else {
                                 KeepAppSessionService.stopSession(this)
                                 calibrator.cancel()
+                                earSyncTester.stop()
                                 manualAudioEngine.start()
                             }
                         },
@@ -200,15 +209,25 @@ class MainActivity : ComponentActivity() {
                         onStartContactCalibration = {
                             KeepAppSessionService.stopSession(this)
                             manualAudioEngine.stop()
+                            earSyncTester.stop()
                             calibrator.startContactImpulseCalibration()
                         },
                         onStartTapCalibration = {
                             KeepAppSessionService.stopSession(this)
                             manualAudioEngine.stop()
+                            earSyncTester.stop()
                             calibrator.startTapToBeatCalibration()
                         },
                         onUserTap = { calibrator.registerUserTap() },
-                        onCancelCalibration = { calibrator.cancel() }
+                        onCancelCalibration = { calibrator.cancel() },
+                        onStartEarSync = { advanceMs ->
+                            KeepAppSessionService.stopSession(this)
+                            manualAudioEngine.stop()
+                            calibrator.cancel()
+                            earSyncTester.start(advanceMs)
+                        },
+                        onStopEarSync = { earSyncTester.stop() },
+                        onEarSyncAdvanceChange = { earSyncTester.setAdvanceMs(it) }
                     )
                 }
             }
@@ -217,6 +236,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         calibrator.cancel()
+        earSyncTester.stop()
         manualAudioEngine.stop()
         super.onDestroy()
     }
@@ -228,6 +248,7 @@ private fun KeepAppMainScreen(
     liveState: LiveSessionUiState,
     manualTelemetry: AudioEngineTelemetry,
     calibState: CalibrationUiState,
+    earSyncState: EarSyncUiState,
     profileStore: BtLatencyProfileStore,
     onToggleLiveSession: () -> Unit,
     onToggleLivePause: () -> Unit,
@@ -247,7 +268,10 @@ private fun KeepAppMainScreen(
     onStartContactCalibration: () -> Unit,
     onStartTapCalibration: () -> Unit,
     onUserTap: () -> Unit,
-    onCancelCalibration: () -> Unit
+    onCancelCalibration: () -> Unit,
+    onStartEarSync: (Float) -> Unit,
+    onStopEarSync: () -> Unit,
+    onEarSyncAdvanceChange: (Float) -> Unit
 ) {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -353,12 +377,12 @@ private fun KeepAppMainScreen(
                         Tab(
                             selected = selectedTab == 2,
                             onClick = { selectedTab = 2 },
-                            text = { Text("Audio M2") }
+                            text = { Text("Test audio") }
                         )
                         Tab(
                             selected = selectedTab == 3,
                             onClick = { selectedTab = 3 },
-                            text = { Text("BT M3") }
+                            text = { Text("Calibrazione") }
                         )
                     }
                 }
@@ -395,11 +419,15 @@ private fun KeepAppMainScreen(
             else -> BluetoothCalibrationTab(
                 modifier = Modifier.padding(innerPadding),
                 calibState = calibState,
+                earSyncState = earSyncState,
                 profileStore = profileStore,
                 onStartContactCalibration = onStartContactCalibration,
                 onStartTapCalibration = onStartTapCalibration,
                 onUserTap = onUserTap,
-                onCancelCalibration = onCancelCalibration
+                onCancelCalibration = onCancelCalibration,
+                onStartEarSync = onStartEarSync,
+                onStopEarSync = onStopEarSync,
+                onEarSyncAdvanceChange = onEarSyncAdvanceChange
             )
         }
     }
@@ -1078,11 +1106,15 @@ private fun AudioEngineTab(
 private fun BluetoothCalibrationTab(
     modifier: Modifier = Modifier,
     calibState: CalibrationUiState,
+    earSyncState: EarSyncUiState,
     profileStore: BtLatencyProfileStore,
     onStartContactCalibration: () -> Unit,
     onStartTapCalibration: () -> Unit,
     onUserTap: () -> Unit,
-    onCancelCalibration: () -> Unit
+    onCancelCalibration: () -> Unit,
+    onStartEarSync: (Float) -> Unit,
+    onStopEarSync: () -> Unit,
+    onEarSyncAdvanceChange: (Float) -> Unit
 ) {
     val context = LocalContext.current
     var activeDevice by remember { mutableStateOf(profileStore.detectActiveOutputDevice()) }
@@ -1090,6 +1122,9 @@ private fun BluetoothCalibrationTab(
     var manualLatencySlider by remember(savedProfile) {
         mutableFloatStateOf(savedProfile?.latencyMs ?: 120f)
     }
+    var earCompensationOn by remember { mutableStateOf(true) }
+    var earFineTuneMs by remember { mutableFloatStateOf(0f) }
+    var earCheckLogs by remember { mutableStateOf(profileStore.loadEarCheckLogs()) }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -1162,7 +1197,7 @@ private fun BluetoothCalibrationTab(
                 modifier = Modifier.padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("Procedure di Calibrazione (D35)", fontWeight = FontWeight.SemiBold)
+                Text("Procedure di Calibrazione", fontWeight = FontWeight.SemiBold)
 
                 Button(
                     onClick = {
@@ -1180,7 +1215,7 @@ private fun BluetoothCalibrationTab(
                     enabled = !calibState.isRunning,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("1. A contatto (5 impulsi + Microfono)")
+                    Text("1. Calibrazione a contatto (8 impulsi)")
                 }
 
                 Button(
@@ -1191,7 +1226,7 @@ private fun BluetoothCalibrationTab(
                     enabled = !calibState.isRunning,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("2. Batti a tempo (16 battiti @ 120 BPM)")
+                    Text("2. Calibrazione battendo a tempo")
                 }
 
                 if (calibState.isRunning) {
@@ -1266,7 +1301,7 @@ private fun BluetoothCalibrationTab(
                     Text(
                         text = String.format(
                             Locale.US,
-                            "Mediana: %.1f ms\nMedia: %.1f ms  |  Dev. Std: %.1f ms\nCampioni validi: %d / %d",
+                            "Mediana: %.1f ms\nMedia: %.1f ms  |  Dev. Std: %.1f ms\nImpulsi rilevati: %d / %d",
                             res.medianLatencyMs,
                             res.meanLatencyMs,
                             res.stdDevMs,
@@ -1329,6 +1364,171 @@ private fun BluetoothCalibrationTab(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Salva valore manuale (${manualLatencySlider.roundToInt()} ms)")
+                }
+            }
+        }
+
+        // Prova a orecchio (altoparlante interno vs cuffia Bluetooth ogni 1 secondo)
+        val baseLatencyMs = savedProfile?.latencyMs ?: 120f
+        val totalAppliedMs = (if (earCompensationOn) baseLatencyMs else 0f) + earFineTuneMs
+        val logTimeFmt = remember { SimpleDateFormat("dd/MM HH:mm:ss", Locale.getDefault()) }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Prova a orecchio", fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = "Stanza silenziosa, telefono sul tavolo, volume a metà, cuffie indossate. Ascolta con la compensazione spenta e poi accesa.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Compensazione ON/OFF", fontWeight = FontWeight.Medium)
+                        Text(
+                            text = if (earCompensationOn) {
+                                String.format(Locale.US, "Attiva (latenza salvata: %.1f ms)", baseLatencyMs)
+                            } else {
+                                "Spenta (0.0 ms)"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = earCompensationOn,
+                        onCheckedChange = { checked ->
+                            earCompensationOn = checked
+                            val newTotal = (if (checked) baseLatencyMs else 0f) + earFineTuneMs
+                            if (earSyncState.isRunning) {
+                                onEarSyncAdvanceChange(newTotal)
+                            }
+                        }
+                    )
+                }
+
+                Text(
+                    text = String.format(
+                        Locale.US,
+                        "Regolazione fine: %+.0f ms  |  Totale applicato: %.1f ms",
+                        earFineTuneMs,
+                        totalAppliedMs
+                    ),
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Slider(
+                    value = earFineTuneMs,
+                    onValueChange = { raw ->
+                        val snapped = ((raw / 5f).roundToInt() * 5f).coerceIn(-150f, 150f)
+                        earFineTuneMs = snapped
+                        val newTotal = (if (earCompensationOn) baseLatencyMs else 0f) + snapped
+                        if (earSyncState.isRunning) {
+                            onEarSyncAdvanceChange(newTotal)
+                        }
+                    },
+                    valueRange = -150f..150f,
+                    steps = 59
+                )
+
+                Button(
+                    onClick = {
+                        if (earSyncState.isRunning) {
+                            onStopEarSync()
+                        } else {
+                            onStartEarSync(totalAppliedMs)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = if (earSyncState.isRunning) {
+                        ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    } else {
+                        ButtonDefaults.buttonColors()
+                    }
+                ) {
+                    Text(if (earSyncState.isRunning) "Ferma" else "Avvia")
+                }
+
+                if (earSyncState.statusText.isNotEmpty()) {
+                    val routingWarning = earSyncState.isRunning &&
+                        (!earSyncState.speakerRoutedCorrectly || !earSyncState.btRoutedCorrectly)
+                    Text(
+                        text = earSyncState.statusText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (routingWarning) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+
+                Text("Esito ascolto:", fontWeight = FontWeight.Medium)
+                val saveOutcome: (String) -> Unit = { outcome ->
+                    val entry = EarCheckLogEntry(
+                        timestampMs = System.currentTimeMillis(),
+                        deviceName = activeDevice.displayName,
+                        compensationOn = earCompensationOn,
+                        fineTuneMs = earFineTuneMs,
+                        totalAppliedMs = totalAppliedMs,
+                        outcome = outcome
+                    )
+                    profileStore.addEarCheckLog(entry)
+                    earCheckLogs = profileStore.loadEarCheckLogs()
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(
+                        onClick = { saveOutcome("Sento 1 colpo") },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Sento 1 colpo")
+                    }
+                    OutlinedButton(
+                        onClick = { saveOutcome("Sento 2 colpi – prima il telefono") },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Sento 2 colpi – prima il telefono")
+                    }
+                    OutlinedButton(
+                        onClick = { saveOutcome("Sento 2 colpi – prima la cuffia") },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Sento 2 colpi – prima la cuffia")
+                    }
+                }
+
+                if (earCheckLogs.isNotEmpty()) {
+                    Text(
+                        text = "Registro prove (${earCheckLogs.size}):",
+                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        earCheckLogs.take(10).forEach { entry ->
+                            val compLabel = if (entry.compensationOn) "ON" else "OFF"
+                            Text(
+                                text = String.format(
+                                    Locale.US,
+                                    "%s | %s | Comp:%s Fine:%+.0f ms (Tot:%.1f ms) -> %s",
+                                    logTimeFmt.format(Date(entry.timestampMs)),
+                                    entry.deviceName,
+                                    compLabel,
+                                    entry.fineTuneMs,
+                                    entry.totalAppliedMs,
+                                    entry.outcome
+                                ),
+                                fontFamily = FontFamily.Monospace,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
                 }
             }
         }

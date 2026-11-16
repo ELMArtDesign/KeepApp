@@ -38,6 +38,15 @@ data class SavedBtLatencyProfile(
     val supportsDoubleTap: Boolean = false
 )
 
+data class EarCheckLogEntry(
+    val timestampMs: Long,
+    val deviceName: String,
+    val compensationOn: Boolean,
+    val fineTuneMs: Float,
+    val totalAppliedMs: Float,
+    val outcome: String
+)
+
 /**
  * Rileva il dispositivo audio Bluetooth attivo e gestisce la persistenza locale delle calibrazioni.
  */
@@ -131,4 +140,43 @@ class BtLatencyProfileStore(context: Context) {
 
     private fun sanitizeKey(raw: String): String =
         raw.replace(Regex("[^A-Za-z0-9_.-]"), "_")
+
+    fun addEarCheckLog(entry: EarCheckLogEntry) {
+        val arr = runCatching {
+            org.json.JSONArray(prefs.getString("ear_check_logs_json", "[]") ?: "[]")
+        }.getOrDefault(org.json.JSONArray())
+        val updated = org.json.JSONArray()
+        updated.put(
+            org.json.JSONObject().apply {
+                put("ts", entry.timestampMs)
+                put("dev", entry.deviceName)
+                put("compOn", entry.compensationOn)
+                put("fine", entry.fineTuneMs.toDouble())
+                put("tot", entry.totalAppliedMs.toDouble())
+                put("out", entry.outcome)
+            }
+        )
+        for (i in 0 until minOf(arr.length(), 19)) {
+            updated.put(arr.getJSONObject(i))
+        }
+        prefs.edit().putString("ear_check_logs_json", updated.toString()).apply()
+    }
+
+    fun loadEarCheckLogs(): List<EarCheckLogEntry> {
+        val raw = prefs.getString("ear_check_logs_json", null) ?: return emptyList()
+        return runCatching {
+            val arr = org.json.JSONArray(raw)
+            List(arr.length()) { i ->
+                val o = arr.getJSONObject(i)
+                EarCheckLogEntry(
+                    timestampMs = o.optLong("ts", 0L),
+                    deviceName = o.optString("dev", "—"),
+                    compensationOn = o.optBoolean("compOn", true),
+                    fineTuneMs = o.optDouble("fine", 0.0).toFloat(),
+                    totalAppliedMs = o.optDouble("tot", 0.0).toFloat(),
+                    outcome = o.optString("out", "")
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
 }
