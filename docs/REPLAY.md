@@ -58,3 +58,19 @@ Se presente nella cartella della sessione, ha la precedenza rispetto al campo `g
 - `riepilogo.md`: tabella completa di tutte le sessioni con parametri e hash `KeepAppConfig`.
 - `riepilogo.json`: riepilogo strutturato per i test automatici e i confronti.
 - **Codice di uscita:** `0` se tutte le sessioni con ground truth rispettano le soglie 1A (`|err cadenza| < 2%`, `fase mediana < 30 ms`), diverso da `0` altrimenti.
+
+---
+
+## 5. Convenzione di Segno Unificata (Replay, App Live, Prova a Orecchio)
+Tutti e tre i componenti adottano la **stessa convenzione** (con latenza cuffia `btLatencyMs >= 0`):
+- **Scheduling nell'app live (`BeatScheduler.kt`) e nel replay (`SessionReplayEngine.kt`):**
+  `targetEmissionNs = predictedFootstrikeNs - btLatencyNs - positionOffsetNs`
+  *(un `btLatencyMs` positivo anticipa l'emissione verso il driver Bluetooth di `btLatencyMs`).*
+- **Prova a orecchio (`EarSyncTester.kt`):**
+  `t_bt_emission = t_speaker_ref - totalAppliedMs`
+  *(un valore positivo anticipa il click in cuffia rispetto al click sull'altoparlante interno).*
+- **Errore di fase nel replay (`SessionReplayEngine.kt`):**
+  `earBeatTimeNs = outNs + btLatencyNs`
+  `signedPhaseErrorMs = (earBeatTimeNs - nearestRefFootstrikeNs) / 1e6`
+  - **Positivo (`+`):** il colpo arriva all'orecchio **DOPO** l'appoggio di riferimento (in ritardo).
+  - **Negativo (`-`):** il colpo arriva all'orecchio **PRIMA** dell'appoggio di riferimento (in anticipo).
