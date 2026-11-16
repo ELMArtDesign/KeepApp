@@ -40,6 +40,7 @@ La prima tabella preliminare di Fase 0 riportava `keyCode 87 (MEDIA_NEXT)` per l
 - Pressione **singola**: arriva regolarmente al telefono via AVRCP alternando `keyCode 127 (KEYCODE_MEDIA_PAUSE)` e `keyCode 126 (KEYCODE_MEDIA_PLAY)` (3 eventi registrati in `sensors.bin` di tipo `8`, con `seq` `0x7F01`, `0x7E01`, `0x7F01`).
 - Pressione **doppia rapida** e **tripla rapida**: **non arrivano al telefono** (nessun `keyCode 87` né altri `KeyEvent` ricevuti), perché il firmware delle `MANKIW-X15` li intercetta internamente per richiamata telefonica / assistente vocale.
 - **Azione implementata (Step A1.3):** riconoscimento del **doppio tocco lato app** tramite finestra temporale configurabile (`headsetDoubleTapWindowMs = 450 ms` in `KeepAppConfig`): due eventi "1 tocco" entro `450 ms` = `DOUBLE_TAP`, mentre il `SINGLE_TAP` viene confermato solo allo scadere dei `450 ms`.
+- **Verifica su dispositivo (`MANKIW-X15`, 16/11/2026):** il singolo tocco mette regolarmente in **Pausa / Ripresa**, mentre due pressioni entro `450 ms` continuano a essere bloccate/intercettate dal firmware della cuffia prima dell'invio AVRCP; la logica software resta attiva e pronta per auricolari senza blocco firmware sul doppio click.
 
 ---
 
