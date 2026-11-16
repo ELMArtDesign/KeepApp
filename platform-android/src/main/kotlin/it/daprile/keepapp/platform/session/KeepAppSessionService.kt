@@ -47,8 +47,10 @@ import it.daprile.keepapp.core.audio.AudioMode
 import it.daprile.keepapp.core.config.KeepAppConfig
 import it.daprile.keepapp.core.format.PhonePosition
 import it.daprile.keepapp.core.session.SessionFrameSnapshot
+import it.daprile.keepapp.core.session.SessionMetricsTracker
 import it.daprile.keepapp.core.session.SessionRunState
 import it.daprile.keepapp.core.session.SessionStateMachine
+import it.daprile.keepapp.core.session.SessionSummaryRecord
 import it.daprile.keepapp.platform.audio.AudioEngineTelemetry
 import it.daprile.keepapp.platform.audio.BtLatencyProfileStore
 import it.daprile.keepapp.platform.audio.KeepAppAudioEngine
@@ -75,7 +77,8 @@ data class LiveSessionUiState(
     val appliedBtLatencyMs: Float = 120f,
     val gpsSpeedMps: Float = 0f,
     val autoLevelEnabled: Boolean = true,
-    val audioTelemetry: AudioEngineTelemetry = AudioEngineTelemetry()
+    val audioTelemetry: AudioEngineTelemetry = AudioEngineTelemetry(),
+    val lastCompletedSummary: SessionSummaryRecord? = null
 )
 
 /**
@@ -136,6 +139,8 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
     private var stateMachine: SessionStateMachine? = null
     private var audioEngine: KeepAppAudioEngine? = null
     private var profileStore: BtLatencyProfileStore? = null
+    private var historyStore: SessionHistoryStore? = null
+    private var metricsTracker: SessionMetricsTracker? = null
 
     @Volatile
     private var appliedBtLatencyMs: Float = 120f
@@ -182,6 +187,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         profileStore = BtLatencyProfileStore(this)
+        historyStore = SessionHistoryStore(this)
         createNotificationChannel()
     }
 
@@ -193,16 +199,29 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
             ACTION_SET_MODE -> {
                 val modeName = intent.getStringExtra(EXTRA_AUDIO_MODE)
                 val mode = runCatching { AudioMode.valueOf(modeName ?: "") }.getOrNull()
-                if (mode != null) audioEngine?.setMode(mode)
+                if (mode != null) {
+                    audioEngine?.setMode(mode)
+                    historyStore?.let { store ->
+                        store.savePreferences(store.loadPreferences().copy(audioMode = mode))
+                    }
+                }
             }
             ACTION_SET_PATTERN -> {
                 val patId = intent.getStringExtra(EXTRA_PATTERN_ID)
                 val pat = PatternAssetLoader.loadAll(this).find { it.id == patId }
-                if (pat != null) audioEngine?.setPattern(pat)
+                if (pat != null) {
+                    audioEngine?.setPattern(pat)
+                    historyStore?.let { store ->
+                        store.savePreferences(store.loadPreferences().copy(patternId = pat.id))
+                    }
+                }
             }
             ACTION_SET_AUTO_LEVEL -> {
                 autoLevelEnabled = intent.getBooleanExtra(EXTRA_AUTO_LEVEL, true)
                 _liveState.value = _liveState.value.copy(autoLevelEnabled = autoLevelEnabled)
+                historyStore?.let { store ->
+                    store.savePreferences(store.loadPreferences().copy(autoLevelEnabled = autoLevelEnabled))
+                }
             }
             ACTION_SET_MANUAL_LEVEL -> {
                 val lvl = intent.getIntExtra(EXTRA_LEVEL_INDEX, 1)
@@ -250,10 +269,16 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
             acquire(4 * 60 * 60 * 1000L) // timeout sicurezza 4h
         }
 
-        // 4. Inizializza StateMachine + AudioEngine
+        // 4. Inizializza StateMachine + AudioEngine + Preferenze + MetricsTracker
+        val prefs = (historyStore ?: SessionHistoryStore(this)).loadPreferences()
+        autoLevelEnabled = prefs.autoLevelEnabled
         val patterns = PatternAssetLoader.loadAll(this)
-        val engine = KeepAppAudioEngine(initialPattern = patterns.first(), config = config)
+        val initialPat = patterns.find { it.id == prefs.patternId } ?: patterns.first()
+        val engine = KeepAppAudioEngine(initialPattern = initialPat, config = config)
+        engine.setMode(prefs.audioMode)
         val sm = SessionStateMachine(config = config, initialPositionHint = PhonePosition.ARM)
+        val nowMs = System.currentTimeMillis()
+        metricsTracker = SessionMetricsTracker(sessionId = "sess_$nowMs", startedAtMs = nowMs)
         audioEngine = engine
         stateMachine = sm
 
@@ -322,6 +347,16 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         releaseMediaSession()
         abandonAudioFocus()
 
+        val completedSummary = metricsTracker?.buildSummary(
+            deviceName = activeDeviceName,
+            appliedBtLatencyMs = appliedBtLatencyMs,
+            patternId = audioEngine?.patternEngine?.currentPattern?.id ?: "pulse_steady"
+        )?.takeIf { it.durationSeconds >= 5f || it.totalSteps >= 5L }
+        if (completedSummary != null) {
+            (historyStore ?: SessionHistoryStore(this)).addSession(completedSummary)
+        }
+        metricsTracker = null
+
         audioEngine?.stop()
         audioEngine = null
         stateMachine = null
@@ -334,7 +369,9 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         _liveState.value = LiveSessionUiState(
             isActive = false,
             activeDeviceName = activeDeviceName,
-            appliedBtLatencyMs = appliedBtLatencyMs
+            appliedBtLatencyMs = appliedBtLatencyMs,
+            autoLevelEnabled = autoLevelEnabled,
+            lastCompletedSummary = completedSummary ?: _liveState.value.lastCompletedSummary
         )
 
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -388,6 +425,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
 
     private fun applySnapshotToAudioAndUi(snapshot: SessionFrameSnapshot) {
         val engine = audioEngine ?: return
+        metricsTracker?.onSnapshot(snapshot)
 
         if (!hasInitialCadenceLock && snapshot.cadenceEstimate.cadenceSpm >= config.minCadenceSpm) {
             hasInitialCadenceLock = true

@@ -65,6 +65,7 @@ import it.daprile.keepapp.core.audio.AudioMode
 import it.daprile.keepapp.core.audio.CalibrationMethod
 import it.daprile.keepapp.core.rhythm.RhythmPattern
 import it.daprile.keepapp.core.session.SessionRunState
+import it.daprile.keepapp.core.session.SessionSummaryRecord
 import it.daprile.keepapp.platform.audio.AudioEngineTelemetry
 import it.daprile.keepapp.platform.audio.BluetoothLatencyCalibrator
 import it.daprile.keepapp.platform.audio.BtLatencyProfileStore
@@ -74,6 +75,9 @@ import it.daprile.keepapp.platform.audio.PatternAssetLoader
 import it.daprile.keepapp.platform.audio.SavedBtLatencyProfile
 import it.daprile.keepapp.platform.session.KeepAppSessionService
 import it.daprile.keepapp.platform.session.LiveSessionUiState
+import it.daprile.keepapp.platform.session.SessionHistoryStore
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -288,7 +292,7 @@ private fun KeepAppMainScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            1 -> Button(
+                            2 -> Button(
                                 onClick = onToggleManualRun,
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -310,16 +314,21 @@ private fun KeepAppMainScreen(
                         Tab(
                             selected = selectedTab == 0,
                             onClick = { selectedTab = 0 },
-                            text = { Text("Live M4") }
+                            text = { Text("Live") }
                         )
                         Tab(
                             selected = selectedTab == 1,
                             onClick = { selectedTab = 1 },
-                            text = { Text("Audio M2") }
+                            text = { Text("Storico") }
                         )
                         Tab(
                             selected = selectedTab == 2,
                             onClick = { selectedTab = 2 },
+                            text = { Text("Audio M2") }
+                        )
+                        Tab(
+                            selected = selectedTab == 3,
+                            onClick = { selectedTab = 3 },
                             text = { Text("BT M3") }
                         )
                     }
@@ -338,7 +347,10 @@ private fun KeepAppMainScreen(
                 onToggleAutoLevel = onLiveToggleAutoLevel,
                 onSelectManualLevel = onLiveSelectManualLevel
             )
-            1 -> AudioEngineTab(
+            1 -> SessionHistoryTab(
+                modifier = Modifier.padding(innerPadding)
+            )
+            2 -> AudioEngineTab(
                 modifier = Modifier.padding(innerPadding),
                 patterns = patterns,
                 telemetry = manualTelemetry,
@@ -518,6 +530,108 @@ private fun LiveSessionTab(
                     fontFamily = FontFamily.Monospace,
                     style = MaterialTheme.typography.bodySmall
                 )
+            }
+        }
+
+        if (!liveState.isActive) {
+            liveState.lastCompletedSummary?.let { summary ->
+                SummaryCard(title = "Riepilogo Ultima Sessione", summary = summary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryCard(
+    title: String,
+    summary: SessionSummaryRecord
+) {
+    val dateStr = remember(summary.startedAtMs) {
+        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY).format(Date(summary.startedAtMs))
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text("$title ($dateStr)", fontWeight = FontWeight.Bold)
+            Text(
+                text = String.format(
+                    Locale.US,
+                    "Durata: %.0f s  |  Passi: %d\nCadenza media: %.1f SPM\nAncora: iniz. %.1f -> fin. %.1f BPM\nSoste: %d  |  Pause: %d  |  Pos: %s\nCuffie: %s (%.1f ms)",
+                    summary.durationSeconds,
+                    summary.totalSteps,
+                    summary.avgCadenceSpm,
+                    summary.initialLockedBpm,
+                    summary.finalTargetBpm,
+                    summary.stopCount,
+                    summary.pauseCount,
+                    summary.dominantPosition.name,
+                    summary.deviceName,
+                    summary.appliedBtLatencyMs
+                ),
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun SessionHistoryTab(
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val store = remember { SessionHistoryStore(context) }
+    var history by remember { mutableStateOf(store.loadHistory()) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Storico Sessioni (${history.size})",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { history = store.loadHistory() }) {
+                    Text("Aggiorna")
+                }
+                if (history.isNotEmpty()) {
+                    OutlinedButton(onClick = {
+                        store.clearHistory()
+                        history = emptyList()
+                    }) {
+                        Text("Cancella")
+                    }
+                }
+            }
+        }
+
+        if (history.isEmpty()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Nessuna sessione salvata finora. Avvia e completa una sessione nella scheda Live per vederla qui.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        } else {
+            history.forEachIndexed { idx, item ->
+                SummaryCard(title = "Sessione #${history.size - idx}", summary = item)
             }
         }
     }
