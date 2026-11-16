@@ -421,7 +421,11 @@ object SessionReplayEngine {
                     val rel = abs(cur.estimatedCadenceSpm - refRow.estimatedCadenceSpm) / refRow.estimatedCadenceSpm
                     if (rel > 0.05f) estJumps++
                 }
-                if (refRow.targetBpm >= config.minCadenceSpm && cur.targetBpm >= config.minCadenceSpm) {
+                if (refRow.anchorState != AnchorState.WARMING_UP &&
+                    cur.anchorState != AnchorState.WARMING_UP &&
+                    refRow.targetBpm >= config.minCadenceSpm &&
+                    cur.targetBpm >= config.minCadenceSpm
+                ) {
                     val relT = abs(cur.targetBpm - refRow.targetBpm) / refRow.targetBpm
                     if (relT > 0.05f) targetJumps++
                 }

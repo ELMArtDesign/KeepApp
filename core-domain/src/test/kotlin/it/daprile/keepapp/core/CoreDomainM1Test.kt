@@ -283,6 +283,46 @@ class CoreDomainM1Test {
     }
 
     @Test
+    fun testElasticAnchorZeroTargetJumpsAfterLock() {
+        val config = KeepAppConfig(anchorLockStableSeconds = 24.0f)
+        val anchor = ElasticAnchor(config)
+        var nowNs = 1_000_000_000L
+        val stepNs = 500_000_000L // 0,5 s
+
+        // 1. Warmup stabile a 160 SPM fino all'aggancio
+        var snap = anchor.currentSnapshot()
+        for (k in 0..55) {
+            snap = anchor.update(nowNs, cadenceSpm = 160.0f, cadenceConfidence = 0.85f, isStopped = false)
+            nowNs += stepNs
+        }
+        assertEquals(AnchorState.LOCKED, snap.state)
+
+        // 2. Dopo l'aggancio: picchi improvvisi, crolli, false soste (< 2 min) e cali prolungati
+        //    Non deve MAI verificarsi alcun salto del targetBpm > 5% in 2 s.
+        val history = ArrayDeque<Pair<Long, Float>>()
+        history.addLast(nowNs to snap.targetBpm)
+
+        val stressCadences = listOf(195f, 110f, 160f, 95f, 180f, 120f, 160f)
+        for (c in stressCadences) {
+            for (rep in 1..8) { // 4 s ciascuno
+                snap = anchor.update(nowNs, cadenceSpm = c, cadenceConfidence = 0.85f, isStopped = false)
+                assertTrue(snap.state != AnchorState.WARMING_UP)
+                history.addLast(nowNs to snap.targetBpm)
+                while (history.isNotEmpty() && nowNs - history.first().first > 2_000_000_000L) {
+                    history.removeFirst()
+                }
+                val refBpm = history.first().second
+                val relJump = kotlin.math.abs(snap.targetBpm - refBpm) / refBpm
+                assertTrue(
+                    relJump <= 0.05f,
+                    "Salto targetBpm > 5% in 2 s dopo l'aggancio: $refBpm -> ${snap.targetBpm} (rel=$relJump)"
+                )
+                nowNs += stepNs
+            }
+        }
+    }
+
+    @Test
     fun testStopDetectorAndRelockAfterTwoMinutes() {
         val config = KeepAppConfig()
         val stopDetector = StopDetector(config)
