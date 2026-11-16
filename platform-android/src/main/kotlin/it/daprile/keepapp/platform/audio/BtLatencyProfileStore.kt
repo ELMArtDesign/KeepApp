@@ -179,4 +179,20 @@ class BtLatencyProfileStore(context: Context) {
             }
         }.getOrDefault(emptyList())
     }
+
+    /**
+     * Salva/carica il ritardo residuo del microfono del telefono (`R_mic` in ms) misurato con il "Test del colpo",
+     * così da sottrarlo automaticamente in tutte le future calibrazioni a contatto delle cuffie.
+     */
+    fun savePhoneMicDelayMs(rMicMs: Float) {
+        prefs.edit().putFloat("phone_r_mic_ms", rMicMs).apply()
+    }
+
+    fun loadPhoneMicDelayMs(): Float? {
+        return if (prefs.contains("phone_r_mic_ms")) {
+            prefs.getFloat("phone_r_mic_ms", 0f)
+        } else {
+            null
+        }
+    }
 }

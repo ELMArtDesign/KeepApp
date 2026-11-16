@@ -43,8 +43,11 @@
 3. **Riconciliazione finale 1d (`AudioRecord.getTimestamp` ATTIVO):**
    - `R_mic (colpo scocca) = 4,7 ms` (`MAD ±0,5 ms`), `Ritardo FIFO IMU (D36) = 4,2 ms`.
    - `X_raw (altoparlante) = 33,0 ms` (`MAD ±0,1 ms`) → **`X_vero = 33,0 - 4,7 = 28,3 ms`**.
-   - `BT da loopback (8 impulsi, getTimestamp + onset 25%/20 ms) = 125,3 ms` (`MAD ±3,9 ms`, `7/8` validi). *(I vecchi `153,4 ms` includevano ~28 ms di buffer `AudioRecord.read()` non compensato.)*
+   - `BT da loopback (8 impulsi, getTimestamp + onset 25%/20 ms) = 125,3 ms` (`MAD ±3,9 ms`, `7/8` validi).
+     - *Spiegazione dei ~28 ms nella vecchia misura (`153,4 ms`):* il vecchio codice usava `SystemClock.elapsedRealtimeNanos()` al ritorno di `AudioRecord.read()` e `totalRecSamples` invece di `AudioRecord.getTimestamp(TIMEBASE_BOOTTIME)` + `recEstimator`, includendo così `~28 ms` di buffer/driver di cattura (`AudioRecord.read()`).
    - `BT da orecchio`: fusione a `85,3–90,3 ms` → `85,3 + 28,3 = 113,6 ms` (fino a `90,3 + 28,3 = 118,6 ms`), con **scarto `loopback - orecchio` di `+6,7..+11,7 ms`**.
-   - **Proposta per la calibrazione da usare (in attesa di conferma di Adriano e Claude):**
-     - Aggiornare il profilo `MANKIW-X15` a **`125,3 ms`** (valore oggettivo del loopback con `AudioRecord.getTimestamp`, oppure **`120 ms`** come media tra loopback `125,3 ms` e orecchio `113,6–118,6 ms`, differenza `< 6 ms` impercettibile a orecchio).
-     - Procedere quindi con **A3.1** (test sintetici), **A3.2** (`ReplayRegressionTest` su `outdoor` + `walk|run`) e **A3.3** (GitHub Actions).
+   - *Variazione tra connessioni Bluetooth:* la prova a orecchio ha dato fusione a `~78 ms` alle 22:58 e `85,3–90,3 ms` nella procedura 1d alle 23:30 → **tolleranza attesa `±10 ms` tra una connessione Bluetooth e l'altra**.
+   - *Parità `AudioTrack` verificata:* `BluetoothLatencyCalibrator` (modalità cuffie BT) e `KeepAppAudioEngine` usano esattamente la stessa configurazione (`USAGE_MEDIA`, `CONTENT_TYPE_MUSIC`, `48 kHz`, `MONO`, `PCM_16BIT`, `MODE_STREAM`, buffer `max(minBuf, 480*2*6)`).
+   - **Decisione approvata (`MANKIW-X15` & regola generale):**
+     - `125,3 ms` è il valore grezzo di loopback (con `R_mic = 4,7 ms` incluso) → valore netto salvato = **`125,3 - 4,7 = 120,6 ms`** (arrotondabile a `120 ms`).
+     - **Regola generale implementata in app:** per tutte le cuffie, `valore salvato = mediana loopback a contatto (≥ 8 impulsi) − R_mic del telefono` (`R_mic` misurato una volta per telefono col *Test del colpo* e salvato in `BtLatencyProfileStore`).

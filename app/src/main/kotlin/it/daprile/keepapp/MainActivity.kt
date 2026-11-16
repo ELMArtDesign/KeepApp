@@ -1150,7 +1150,15 @@ private fun BluetoothCalibrationTab(
     var earFineTuneMs by remember { mutableFloatStateOf(0f) }
     var earCheckLogs by remember { mutableStateOf(profileStore.loadEarCheckLogs()) }
     var earLogExportStatus by remember { mutableStateOf("") }
+    var savedPhoneRMicMs by remember { mutableStateOf(profileStore.loadPhoneMicDelayMs()) }
     var pendingSpeakerCheck by remember { mutableStateOf(false) }
+
+    androidx.compose.runtime.LaunchedEffect(calibState.rMicMedianMs) {
+        calibState.rMicMedianMs?.let { measured ->
+            profileStore.savePhoneMicDelayMs(measured)
+            savedPhoneRMicMs = measured
+        }
+    }
     var pendingBodyTapCheck by remember { mutableStateOf(false) }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
@@ -1383,17 +1391,39 @@ private fun BluetoothCalibrationTab(
                         },
                         fontWeight = FontWeight.Bold
                     )
+                    val effectiveRMic = calibState.rMicMedianMs ?: savedPhoneRMicMs ?: 0f
+                    val isContactSummary = !calibState.isSpeakerCheck && !calibState.isBodyTapCheck &&
+                        res.method == CalibrationMethod.CONTACT_IMPULSE
+                    val netLatencyMs = if (isContactSummary) {
+                        (res.medianLatencyMs - effectiveRMic).coerceAtLeast(0f)
+                    } else {
+                        res.medianLatencyMs
+                    }
                     Text(
-                        text = String.format(
-                            Locale.US,
-                            "Mediana: %.1f ms (MAD ±%.1f ms)\nMedia: %.1f ms  |  Dev. Std: %.1f ms\nCampioni validi: %d / %d",
-                            res.medianLatencyMs,
-                            res.madMs,
-                            res.meanLatencyMs,
-                            res.stdDevMs,
-                            res.validSamples,
-                            res.totalSamples
-                        ),
+                        text = buildString {
+                            append(
+                                String.format(
+                                    Locale.US,
+                                    "Mediana: %.1f ms (MAD ±%.1f ms)\nMedia: %.1f ms  |  Dev. Std: %.1f ms\nCampioni validi: %d / %d",
+                                    res.medianLatencyMs,
+                                    res.madMs,
+                                    res.meanLatencyMs,
+                                    res.stdDevMs,
+                                    res.validSamples,
+                                    res.totalSamples
+                                )
+                            )
+                            if (isContactSummary) {
+                                append(
+                                    String.format(
+                                        Locale.US,
+                                        "\nR_mic telefono: %.1f ms → Netto da salvare: %.1f ms",
+                                        effectiveRMic,
+                                        netLatencyMs
+                                    )
+                                )
+                            }
+                        },
                         fontFamily = FontFamily.Monospace
                     )
                     if (!calibState.isSpeakerCheck && !calibState.isBodyTapCheck) {
@@ -1402,7 +1432,7 @@ private fun BluetoothCalibrationTab(
                                 val profile = SavedBtLatencyProfile(
                                     deviceKey = activeDevice.key,
                                     deviceName = activeDevice.displayName,
-                                    latencyMs = res.medianLatencyMs,
+                                    latencyMs = netLatencyMs,
                                     stdDevMs = res.stdDevMs,
                                     method = res.method,
                                     calibratedAtMs = System.currentTimeMillis()
@@ -1412,7 +1442,13 @@ private fun BluetoothCalibrationTab(
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("SALVA PROFILO PER ${activeDevice.displayName}")
+                            Text(
+                                if (isContactSummary) {
+                                    String.format(Locale.US, "SALVA %.1f ms PER %s", netLatencyMs, activeDevice.displayName)
+                                } else {
+                                    "SALVA PROFILO PER ${activeDevice.displayName}"
+                                }
+                            )
                         }
                     }
                 }
@@ -1420,8 +1456,9 @@ private fun BluetoothCalibrationTab(
         }
 
         // Riepilogo confronto latenze (1d): R_mic, X_vero, BT loopback, BT da orecchio, Scarto
-        if (calibState.rMicMedianMs != null || calibState.speakerXRawMs != null || calibState.btLoopbackMs != null) {
-            val rMic = calibState.rMicMedianMs
+        val displayRMic = calibState.rMicMedianMs ?: savedPhoneRMicMs
+        if (displayRMic != null || calibState.speakerXRawMs != null || calibState.btLoopbackMs != null) {
+            val rMic = displayRMic
             val xRaw = calibState.speakerXRawMs
             val xVero = if (xRaw != null) xRaw - (rMic ?: 0f) else null
             val earFusionMs = earCheckLogs.firstOrNull { it.outcome.contains("1 colpo") }?.totalAppliedMs ?: 78.0f
