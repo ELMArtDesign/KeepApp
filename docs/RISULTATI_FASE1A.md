@@ -27,7 +27,8 @@
 | Verifica | Procedura | Esito | Stato |
 | :--- | :--- | :--- | :---: |
 | **Confronto a orecchio altoparlante vs cuffia (`153,4 ms` ON / OFF)** | Emettere un click di riferimento sull'altoparlante del telefono e un click compensato sulle `MANKIW-X15` (esiti con totale applicato in ms) | `3,4 ms` → prima telefono; `38,4 ms` → prima telefono; `73,4 ms` → **1 colpo (×2)**; `78,4 ms` → **1 colpo (×2)**; `88,4 / 98,4 / 108,4 / 118,4 / 128,4 ms` → 2 colpi, sempre più distanziati all'aumentare del valore; `193,4 / 218,4 / 298,4 ms` → prima cuffia. Finestra di fusione: inferiore `38,4–73,4 ms`, superiore `78,4–88,4 ms` (**valore percettivo provvisorio `~75 ms`, relativo all'altoparlante interno**). | ⏳ **IN CORSO** *(manca misura `X` altoparlante)* |
-| **Controllo loopback D35 altoparlante interno (`X`)** | Stesso metodo `AudioTrack.getTimestamp()` + `AudioRecord` su `TIMEBASE_BOOTTIME` forzato su `TYPE_BUILTIN_SPEAKER` (`USAGE_ASSISTANCE_SONIFICATION`) | **Mediana `47,0 ms`** (media `46,9 ms`, dev. std `0,6 ms`, **`8/8` impulsi** rilevati) | ✅ **MISURATO** |
+| **Controllo loopback D35 altoparlante interno (`X`)** | Stesso metodo `AudioTrack.getTimestamp()` + `AudioRecord.getTimestamp(TIMEBASE_BOOTTIME)` forzato su `TYPE_BUILTIN_SPEAKER` (`USAGE_ASSISTANCE_SONIFICATION`) | **`X_raw = 33,0 ms`** (MAD `±0,1 ms`); con `R_mic = 4,7 ms` (`MAD ±0,5 ms`, FIFO IMU `4,2 ms`), **`X_vero = 28,3 ms`** | ✅ **MISURATO** |
+| **Verifica 1d completa (stessa connessione BT)** | Test del colpo (`R_mic`) → Loopback altoparlante (`X_vero`) → Contatto 8 impulsi (`BT loopback`) → Prova a orecchio (`BT orecchio`) | `BT loopback = 125,3 ms` (`MAD ±3,9 ms`, `7/8` impulsi); Prova a orecchio: `85,3 ms` e `90,3 ms` → **1 colpo** → `BT orecchio = 113,6–118,6 ms` (**scarto `+6,7..+11,7 ms`**) | ✅ **RICONCILIATO** |
 
 ### Riconciliazione Numeri (153,4 ms vs ~75 ms a orecchio vs +62,3 ms replay `171619`)
 1. **Convenzione di segno (verificata identica tra replay e app live):**
@@ -39,12 +40,11 @@
    - **Doppia sottrazione di `positionOffsetMs` (bug individuato):** `PhaseTracker.kt` sottrae già `positionOffsetNs` da `prevTimestampNs`, e `BeatScheduler.kt` lo sottrae **una seconda volta**. Nella `171619` (classificata al 78% come `WAIST`, `8 ms`), la doppia sottrazione anticipa di `2 × 8 ms = -16,0 ms`.
    - **Bilancio:** `+80,5 ms` (ritardo filtro causale ~120 SPM) `- 16,0 ms` (doppia sottrazione `WAIST`) = **`+64,5 ms`**, coerente con i **`+62,3 ms`** misurati dal replay.
    - **Ritardo FIFO sensori (D36) e lag meccanico piede→braccio:** non entrano in questo confronto replay perché `SensorEvent.timestamp` è il timestamp hardware dell'evento (non l'arrivo del batch FIFO) e `FootstrikeReferenceDetector` usa lo stesso segnale IMU.
-3. **Calcolo `BT_vero = 78 + X` e proposta motivata:**
-   - Con **`X = 47,0 ms`** (media `46,9 ms`, dev. std `0,6 ms`, `8/8` impulsi) e valore percettivo a orecchio **`78 ms ± 5 ms`**:
-     - **`BT_vero = 78 + 47,0 = 125,0 ms`** (intervallo `120–130 ms`).
-     - Confronto con calibrazione a contatto (`153,4 ms` su `4/5` impulsi): scarto residuo di **`28,4 ms`**.
-     - *Nota fisica (`R_mic`):* sia `X = 47,0 ms` sia la calibrazione a contatto (`153,4 ms`) includono la latenza di cattura del microfono `AudioRecord` (`R_mic`), assente nell'uso reale in cuffia; per questo `78 + X = 125,0 ms` è direttamente confrontabile con il loopback a contatto `153,4 ms`, mentre il ritardo puro d'uscita BT (senza microfono) è inferiore di `R_mic`.
+3. **Riconciliazione finale 1d (`AudioRecord.getTimestamp` ATTIVO):**
+   - `R_mic (colpo scocca) = 4,7 ms` (`MAD ±0,5 ms`), `Ritardo FIFO IMU (D36) = 4,2 ms`.
+   - `X_raw (altoparlante) = 33,0 ms` (`MAD ±0,1 ms`) → **`X_vero = 33,0 - 4,7 = 28,3 ms`**.
+   - `BT da loopback (8 impulsi, getTimestamp + onset 25%/20 ms) = 125,3 ms` (`MAD ±3,9 ms`, `7/8` validi). *(I vecchi `153,4 ms` includevano ~28 ms di buffer `AudioRecord.read()` non compensato.)*
+   - `BT da orecchio`: fusione a `85,3–90,3 ms` → `85,3 + 28,3 = 113,6 ms` (fino a `90,3 + 28,3 = 118,6 ms`), con **scarto `loopback - orecchio` di `+6,7..+11,7 ms`**.
    - **Proposta per la calibrazione da usare (in attesa di conferma di Adriano e Claude):**
-     - **Non modificare ancora** `153,4 ms` salvati senza approvazione.
-     - Prima di decidere definitivamente, eseguire la nuova **calibrazione a contatto a 8 impulsi** su `MANKIW-X15` per verificare se su 8 impulsi il valore resta `153,4 ms` o converge verso `~125–140 ms`; il valore proposto dalla riconciliazione a orecchio + loopback `X` è **`125,0 ms`** (`78 + 47,0 ms`).
-     - In parallelo, in Fase A3 vanno corretti il ritardo di gruppo del filtro causale (`~72–80 ms`) e la doppia sottrazione di `positionOffsetNs`, che dominano l'errore di fase nei replay.
+     - Aggiornare il profilo `MANKIW-X15` a **`125,3 ms`** (valore oggettivo del loopback con `AudioRecord.getTimestamp`, oppure **`120 ms`** come media tra loopback `125,3 ms` e orecchio `113,6–118,6 ms`, differenza `< 6 ms` impercettibile a orecchio).
+     - Procedere quindi con **A3.1** (test sintetici), **A3.2** (`ReplayRegressionTest` su `outdoor` + `walk|run`) e **A3.3** (GitHub Actions).
