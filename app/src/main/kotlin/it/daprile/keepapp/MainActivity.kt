@@ -503,9 +503,14 @@ private fun LiveSessionTab(
                 }
 
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val displayedPatternId = if (liveState.isActive && liveState.audioTelemetry.activePatternId.isNotEmpty()) {
+                        liveState.audioTelemetry.activePatternId
+                    } else {
+                        selectedPatternId
+                    }
                     patterns.forEach { pat ->
                         FilterChip(
-                            selected = selectedPatternId == pat.id,
+                            selected = displayedPatternId == pat.id,
                             onClick = {
                                 selectedPatternId = pat.id
                                 onSelectPattern(pat)

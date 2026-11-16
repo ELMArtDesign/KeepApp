@@ -624,6 +624,12 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         historyStore?.let { store ->
             store.savePreferences(store.loadPreferences().copy(patternId = next.id))
         }
+        _liveState.value = _liveState.value.copy(
+            audioTelemetry = _liveState.value.audioTelemetry.copy(
+                activePatternId = next.id,
+                activePatternName = next.name
+            )
+        )
         updateNotification("Pattern: ${next.name}")
     }
 
