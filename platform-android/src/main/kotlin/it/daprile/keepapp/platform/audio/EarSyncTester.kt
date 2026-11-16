@@ -20,6 +20,7 @@ import android.media.AudioTrack
 import android.os.Build
 import android.os.Process
 import android.os.SystemClock
+import it.daprile.keepapp.core.audio.AudioClockEstimator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -166,13 +167,13 @@ class EarSyncTester(
                 if (trackSpeaker.getTimestamp(tsSpeaker)) {
                     estSpeaker.updateFromTimestamp(
                         tsSpeaker.framePosition,
-                        AudioClockEstimator.normalizeTrackTimestampToBoottimeNs(tsSpeaker.nanoTime)
+                        AudioClockTimestampNormalizer.normalizeTrackTimestampToBoottimeNs(tsSpeaker.nanoTime)
                     )
                 }
                 if (trackBt.getTimestamp(tsBt)) {
                     estBt.updateFromTimestamp(
                         tsBt.framePosition,
-                        AudioClockEstimator.normalizeTrackTimestampToBoottimeNs(tsBt.nanoTime)
+                        AudioClockTimestampNormalizer.normalizeTrackTimestampToBoottimeNs(tsBt.nanoTime)
                     )
                 }
 

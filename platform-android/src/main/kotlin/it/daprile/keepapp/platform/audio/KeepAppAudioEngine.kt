@@ -17,6 +17,7 @@ import android.media.AudioTimestamp
 import android.media.AudioTrack
 import android.os.Build
 import android.os.Process
+import it.daprile.keepapp.core.audio.AudioClockEstimator
 import it.daprile.keepapp.core.audio.AudioMode
 import it.daprile.keepapp.core.audio.BeatScheduler
 import it.daprile.keepapp.core.config.KeepAppConfig
@@ -252,7 +253,7 @@ class KeepAppAudioEngine(
                 if (track.getTimestamp(audioTimestamp)) {
                     clockEstimator.updateFromTimestamp(
                         framePosition = audioTimestamp.framePosition,
-                        nanoTimeNs = AudioClockEstimator.normalizeTrackTimestampToBoottimeNs(audioTimestamp.nanoTime)
+                        nanoTimeNs = AudioClockTimestampNormalizer.normalizeTrackTimestampToBoottimeNs(audioTimestamp.nanoTime)
                     )
                 }
 

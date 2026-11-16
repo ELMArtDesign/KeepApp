@@ -26,6 +26,7 @@ import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.os.Process
 import android.os.SystemClock
+import it.daprile.keepapp.core.audio.AudioClockEstimator
 import it.daprile.keepapp.core.audio.BluetoothCalibrationMath
 import it.daprile.keepapp.core.audio.CalibrationMethod
 import it.daprile.keepapp.core.audio.CalibrationSummary
@@ -321,7 +322,7 @@ class BluetoothLatencyCalibrator(
                 if (track.getTimestamp(trackTs)) {
                     trackEstimator.updateFromTimestamp(
                         trackTs.framePosition,
-                        AudioClockEstimator.normalizeTrackTimestampToBoottimeNs(trackTs.nanoTime)
+                        AudioClockTimestampNormalizer.normalizeTrackTimestampToBoottimeNs(trackTs.nanoTime)
                     )
                 }
             }
@@ -363,7 +364,7 @@ class BluetoothLatencyCalibrator(
                     if (track.getTimestamp(trackTs)) {
                         trackEstimator.updateFromTimestamp(
                             trackTs.framePosition,
-                            AudioClockEstimator.normalizeTrackTimestampToBoottimeNs(trackTs.nanoTime)
+                            AudioClockTimestampNormalizer.normalizeTrackTimestampToBoottimeNs(trackTs.nanoTime)
                         )
                     }
 
@@ -706,7 +707,7 @@ class BluetoothLatencyCalibrator(
                 if (track.getTimestamp(trackTs)) {
                     trackEstimator.updateFromTimestamp(
                         trackTs.framePosition,
-                        AudioClockEstimator.normalizeTrackTimestampToBoottimeNs(trackTs.nanoTime)
+                        AudioClockTimestampNormalizer.normalizeTrackTimestampToBoottimeNs(trackTs.nanoTime)
                     )
                 }
             }
@@ -725,7 +726,7 @@ class BluetoothLatencyCalibrator(
                     if (track.getTimestamp(trackTs)) {
                         trackEstimator.updateFromTimestamp(
                             trackTs.framePosition,
-                            AudioClockEstimator.normalizeTrackTimestampToBoottimeNs(trackTs.nanoTime)
+                            AudioClockTimestampNormalizer.normalizeTrackTimestampToBoottimeNs(trackTs.nanoTime)
                         )
                     }
                 }
@@ -746,7 +747,7 @@ class BluetoothLatencyCalibrator(
                 if (track.getTimestamp(trackTs)) {
                     trackEstimator.updateFromTimestamp(
                         trackTs.framePosition,
-                        AudioClockEstimator.normalizeTrackTimestampToBoottimeNs(trackTs.nanoTime)
+                        AudioClockTimestampNormalizer.normalizeTrackTimestampToBoottimeNs(trackTs.nanoTime)
                     )
                 }
             }

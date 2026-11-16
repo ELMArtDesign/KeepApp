@@ -8,9 +8,8 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 
-package it.daprile.keepapp.platform.audio
+package it.daprile.keepapp.core.audio
 
-import android.os.SystemClock
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToLong
@@ -20,12 +19,8 @@ import kotlin.math.sqrt
  * Stimatore PLL / regressione lineare ai minimi quadrati (OLS) su finestra scorrevole fissa
  * tra indice di campione PCM e tempo di uscita `TIMEBASE_BOOTTIME` (`AudioTrack.getTimestamp()` — D36).
  *
- * Progettato per:
- * 1. Filtrare il jitter a pacchetti (~2–10 ms) con cui l'HAL audio Android / Bluetooth A2DP
- *    aggiorna `getTimestamp()`.
- * 2. Ridurre l'errore di predizione della retta campione↔tempo sotto `< 0,5 ms` (`rawJitter / sqrt(N)`).
- * 3. Zero allocazioni heap durante gli aggiornamenti sul thread audio ad alta priorità.
- * 4. Riusabilità in M3 per la calibrazione della latenza Bluetooth (D35).
+ * Modulo puro `:core-domain` (nessuna dipendenza Android): la normalizzazione dei timestamp HAL
+ * (`SystemClock.elapsedRealtimeNanos()` vs `System.nanoTime()`) resta in `:platform-android`.
  */
 class AudioClockEstimator(
     val sampleRateHz: Int = 48_000
@@ -34,34 +29,15 @@ class AudioClockEstimator(
         private const val WINDOW_CAPACITY = 128 // ~3–5 s di timestamp HAL
         private const val MIN_LOCK_SAMPLES = 24
         private const val OUTLIER_THRESHOLD_MS = 20.0
-
-        /**
-         * Converte un timestamp restituito da `AudioTrack.getTimestamp()` (tipicamente `CLOCK_MONOTONIC`)
-         * nella base `TIMEBASE_BOOTTIME` (`SystemClock.elapsedRealtimeNanos()`), rilevando automaticamente
-         * quale clock sta usando l'HAL del dispositivo.
-         */
-        fun normalizeTrackTimestampToBoottimeNs(trackNanoTimeNs: Long): Long {
-            val nowMono = System.nanoTime()
-            val nowBoot = SystemClock.elapsedRealtimeNanos()
-            val diffFromMono = abs(trackNanoTimeNs - nowMono)
-            val diffFromBoot = abs(trackNanoTimeNs - nowBoot)
-            return if (diffFromMono < diffFromBoot) {
-                trackNanoTimeNs + (nowBoot - nowMono)
-            } else {
-                trackNanoTimeNs
-            }
-        }
     }
 
     private val nominalNsPerSample = 1_000_000_000.0 / sampleRateHz.toDouble()
 
-    // Ring buffer preallocato (zero allocazioni nel loop audio)
     private val ringSamples = LongArray(WINDOW_CAPACITY)
     private val ringTimesNs = LongArray(WINDOW_CAPACITY)
     private var ringHead = 0
     private var ringCount = 0
 
-    // Stato del modello lineare pubblicato con @Volatile per lettura lock-free da scheduler/UI
     @Volatile
     private var anchorSample: Long = 0L
 
@@ -122,7 +98,7 @@ class AudioClockEstimator(
     }
 
     /**
-     * Aggiorna il modello OLS con una coppia `(framePosition, nanoTime)` letta da `AudioTrack.getTimestamp()`.
+     * Aggiorna il modello OLS con una coppia `(framePosition, nanoTimeNs)` in `TIMEBASE_BOOTTIME`.
      * Non alloca memoria heap.
      */
     fun updateFromTimestamp(framePosition: Long, nanoTimeNs: Long) {
@@ -157,7 +133,6 @@ class AudioClockEstimator(
             return
         }
 
-        // Regressione lineare OLS con origine centrata sul primo elemento della finestra per stabilità numerica
         val oldestIdx = if (ringCount < WINDOW_CAPACITY) 0 else ringHead
         val s0 = ringSamples[oldestIdx]
         val t0 = ringTimesNs[oldestIdx]
@@ -182,7 +157,6 @@ class AudioClockEstimator(
             varX += dx * dx
         }
 
-        // Usiamo la pendenza OLS solo quando la finestra copre almeno ~0,5 s (24.000 campioni)
         val newSlope = if (varX > 0.0 && (framePosition - s0) >= sampleRateHz / 2) {
             val minSlope = nominalNsPerSample * 0.998
             val maxSlope = nominalNsPerSample * 1.002
@@ -191,7 +165,6 @@ class AudioClockEstimator(
             nominalNsPerSample
         }
 
-        // Calcoliamo lo scarto quadratico medio grezzo sui campioni della finestra
         var sumSqErrMs2 = 0.0
         for (k in 0 until ringCount) {
             val idx = (oldestIdx + k) % WINDOW_CAPACITY
@@ -218,7 +191,6 @@ class AudioClockEstimator(
 
     /**
      * Stima il timestamp `TIMEBASE_BOOTTIME` in nanosecondi a cui verrà riprodotto `sampleIndex`.
-     * Restituisce `null` se il PLL non ha ancora ricevuto alcun timestamp valido.
      */
     fun outputTimeNsForSample(sampleIndex: Long): Long? {
         if (!initialized) return null
