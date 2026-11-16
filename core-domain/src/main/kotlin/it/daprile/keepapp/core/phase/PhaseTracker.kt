@@ -62,7 +62,8 @@ class PhaseTracker(
         filteredAccel: Float,
         currentCadenceSpm: Float,
         cadenceConfidence: Float,
-        position: PhonePosition
+        position: PhonePosition,
+        filterGroupDelayNs: Long = 0L
     ): PhaseState {
         val posOffsetMs = config.phaseOffsetMsFor(position)
         val posOffsetNs = (posOffsetMs * 1_000_000f).toLong()
@@ -99,8 +100,9 @@ class PhaseTracker(
             detectedImpactNow = true
             totalImpacts++
 
-            // L'istante dell'appoggio reale precede leggermente il picco IMU in base alla posizione (D39)
-            val estimatedFootstrikeNs = prevTimestampNs - posOffsetNs
+            // L'istante dell'appoggio reale precede il picco filtrato per il ritardo di gruppo del filtro causale
+            // e per l'offset meccanico della posizione del telefono (D39)
+            val estimatedFootstrikeNs = prevTimestampNs - filterGroupDelayNs - posOffsetNs
 
             if (periodNs > 0L && smoothedAnchorPhaseNs > 0L) {
                 // Calcola l'errore di fase rispetto alla griglia periodica prevista [-T/2, +T/2]

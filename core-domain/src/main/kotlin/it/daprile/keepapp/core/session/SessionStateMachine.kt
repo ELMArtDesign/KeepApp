@@ -165,7 +165,8 @@ class SessionStateMachine(
             filteredAccel = latestCadence.latestFilteredAccel,
             currentCadenceSpm = latestCadence.cadenceSpm,
             cadenceConfidence = latestCadence.confidence,
-            position = latestPosition.position
+            position = latestPosition.position,
+            filterGroupDelayNs = latestCadence.filterGroupDelayNs
         )
 
         // Se il sensore hardware TYPE_STEP_DETECTOR non ha emesso eventi negli ultimi 1,8 s ma

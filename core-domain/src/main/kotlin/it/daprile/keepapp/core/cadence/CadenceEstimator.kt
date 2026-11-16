@@ -36,7 +36,9 @@ data class CadenceEstimate(
     /** Indica se la stima corrente ha superato la soglia di confidenza (altrimenti è in stato 'hold') */
     val isLockedOrValid: Boolean,
     /** Ultimo campione |a| filtrato passa-banda (utile al PhaseTracker per i picchi d'impatto) */
-    val latestFilteredAccel: Float = 0f
+    val latestFilteredAccel: Float = 0f,
+    /** Ritardo di gruppo (ns) del passa-banda causale alla cadenza corrente */
+    val filterGroupDelayNs: Long = 0L
 )
 
 /**
@@ -120,14 +122,25 @@ class CadenceEstimator(
         return currentEstimate()
     }
 
-    fun currentEstimate(): CadenceEstimate = CadenceEstimate(
-        cadenceSpm = heldCadenceSpm,
-        confidence = lastConfidence,
-        dynamicRmsMps2 = lastDynamicRms,
-        stepDetectorSpm = lastStepDetectorSpm,
-        isLockedOrValid = lastConfidence >= config.cadenceConfidenceThreshold && heldCadenceSpm >= config.minCadenceSpm,
-        latestFilteredAccel = lastFilteredValue
-    )
+    fun currentEstimate(): CadenceEstimate {
+        val groupDelayNs = if (heldCadenceSpm >= config.minCadenceSpm) {
+            BiquadFilter.computeBandpassGroupDelayNs(
+                sampleRateHz = sampleRateHz,
+                hpCutoffHz = config.cadenceHighPassCutoffHz,
+                lpCutoffHz = config.cadenceLowPassCutoffHz,
+                frequencyHz = heldCadenceSpm / 60f
+            )
+        } else 0L
+        return CadenceEstimate(
+            cadenceSpm = heldCadenceSpm,
+            confidence = lastConfidence,
+            dynamicRmsMps2 = lastDynamicRms,
+            stepDetectorSpm = lastStepDetectorSpm,
+            isLockedOrValid = lastConfidence >= config.cadenceConfidenceThreshold && heldCadenceSpm >= config.minCadenceSpm,
+            latestFilteredAccel = lastFilteredValue,
+            filterGroupDelayNs = groupDelayNs
+        )
+    }
 
     private fun computeAutocorrelationCadence(nowNs: Long, position: PhonePosition) {
         val stepCutoffNs = nowNs - 5_000_000_000L
@@ -429,6 +442,46 @@ class CadenceEstimator(
                 val a1 = (-2.0 * cosW0) / a0
                 val a2 = (1.0 - alpha) / a0
                 return BiquadFilter(b0.toFloat(), b1.toFloat(), b2.toFloat(), a1.toFloat(), a2.toFloat())
+            }
+
+            /**
+             * Calcola il ritardo di gruppo analitico (in nanosecondi) della cascata passa-banda
+             * (`highPass` + `lowPass`) alla frequenza `frequencyHz` (cadenza in passi/secondo).
+             */
+            fun computeBandpassGroupDelayNs(
+                sampleRateHz: Float,
+                hpCutoffHz: Float,
+                lpCutoffHz: Float,
+                frequencyHz: Float
+            ): Long {
+                val fs = sampleRateHz.coerceAtLeast(20f).toDouble()
+                val f = frequencyHz.toDouble().coerceIn(0.2, fs * 0.40)
+                val hp = highPass(fs.toFloat(), hpCutoffHz)
+                val lp = lowPass(fs.toFloat(), lpCutoffHz)
+                val df = 0.01
+                val p1 = totalPhaseRad(hp, lp, (f - df).coerceAtLeast(0.05), fs)
+                val p2 = totalPhaseRad(hp, lp, (f + df).coerceAtMost(fs * 0.45), fs)
+                var dp = p2 - p1
+                while (dp > PI) dp -= 2.0 * PI
+                while (dp < -PI) dp += 2.0 * PI
+                val gdSec = (-dp / (2.0 * PI * 2.0 * df)).coerceIn(0.0, 0.5)
+                return (gdSec * 1_000_000_000.0).toLong()
+            }
+
+            private fun totalPhaseRad(hp: BiquadFilter, lp: BiquadFilter, f: Double, fs: Double): Double {
+                val w = 2.0 * PI * f / fs
+                val cw = cos(w)
+                val sw = -sin(w)
+                val c2w = cos(2.0 * w)
+                val s2w = -sin(2.0 * w)
+                fun biquadPhase(flt: BiquadFilter): Double {
+                    val nr = flt.b0 + flt.b1 * cw + flt.b2 * c2w
+                    val ni = flt.b1 * sw + flt.b2 * s2w
+                    val dr = 1.0 + flt.a1 * cw + flt.a2 * c2w
+                    val di = flt.a1 * sw + flt.a2 * s2w
+                    return kotlin.math.atan2(ni, nr) - kotlin.math.atan2(di, dr)
+                }
+                return biquadPhase(hp) + biquadPhase(lp)
             }
         }
     }

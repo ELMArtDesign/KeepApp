@@ -224,8 +224,8 @@ class BeatScheduler(
         }
         val nominalOutputNs = outputTimeNsForSample(nominalBeatSample) ?: return 0L
 
-        // Istante desiderato di emissione (D39): appoggio previsto - latenza BT - offset posizione
-        val targetEmissionNs = predictedFootstrikeNs - btLatencyNs - positionOffsetNs
+        // Istante desiderato di emissione (D39): appoggio previsto (già compensato per posizione in PhaseTracker) - latenza BT
+        val targetEmissionNs = predictedFootstrikeNs - btLatencyNs
         val periodNs = ((samplesPerBeat / sampleRateHz.toDouble()) * 1_000_000_000.0).roundToLong()
         if (periodNs <= 0L) return 0L
 
