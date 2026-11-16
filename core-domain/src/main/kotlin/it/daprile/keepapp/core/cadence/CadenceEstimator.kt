@@ -282,8 +282,8 @@ class CadenceEstimator(
         val fractionalLag = parabolicInterpolateLag(r, chosenLag)
         val rawSpm = ((60f * effectiveFs) / fractionalLag).coerceIn(config.minCadenceSpm, config.maxCadenceSpm)
 
-        val energyFactor = ((lastDynamicRms - config.minDynamicAccelRmsMps2) / 1.5f).coerceIn(0.30f, 1.0f)
-        val stepAgreementBonus = if (lastStepDetectorSpm > 0f && abs(rawSpm - lastStepDetectorSpm) <= 8f) 0.12f else 0f
+        val energyFactor = ((lastDynamicRms - config.minDynamicAccelRmsMps2) / 1.1f).coerceIn(0.45f, 1.0f)
+        val stepAgreementBonus = if (lastStepDetectorSpm > 0f && abs(rawSpm - lastStepDetectorSpm) <= 8f) 0.14f else 0f
         val confidence = (chosenPeakVal * energyFactor + stepAgreementBonus).coerceIn(0f, 1f)
         lastConfidence = confidence
 
@@ -295,6 +295,14 @@ class CadenceEstimator(
                 val alpha = config.cadenceSmoothingAlpha.coerceIn(0.1f, 1.0f)
                 (1f - alpha) * heldCadenceSpm + alpha * rawSpm
             }
+        } else if (lastStepDetectorSpm >= config.minCadenceSpm && lastDynamicRms >= config.minDynamicAccelRmsMps2) {
+            // Fallback su TYPE_STEP_DETECTOR quando l'utente cammina piano e l'ACF è ancora indecisa
+            heldCadenceSpm = if (heldCadenceSpm <= 0f) {
+                lastStepDetectorSpm
+            } else {
+                0.5f * heldCadenceSpm + 0.5f * lastStepDetectorSpm
+            }
+            lastConfidence = config.cadenceConfidenceThreshold
         }
     }
 

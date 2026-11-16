@@ -614,7 +614,7 @@ private fun SessionHistoryTab(
                         store.clearHistory()
                         history = emptyList()
                     }) {
-                        Text("Cancella")
+                        Text("Svuota", maxLines = 1)
                     }
                 }
             }

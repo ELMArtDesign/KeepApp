@@ -46,7 +46,7 @@ data class KeepAppConfig(
     val maxCadenceSpm: Float = 220.0f, // da tarare
 
     /** Energia dinamica RMS minima (m/s^2) su |a| filtrato per considerare il soggetto in movimento */
-    val minDynamicAccelRmsMps2: Float = 0.45f, // da tarare
+    val minDynamicAccelRmsMps2: Float = 0.28f, // da tarare
 
     /** Soglia minima di confidenza [0..1] sotto la quale il BPM stimato resta bloccato (D38) */
     val cadenceConfidenceThreshold: Float = 0.32f, // da tarare
@@ -117,8 +117,8 @@ data class KeepAppConfig(
     /** Velocità GPS sotto la quale (insieme a zero passi) si dichiara la sosta (D42: < 0,5 m/s) */
     val stopMaxGpsSpeedMps: Float = 0.5f, // da tarare
 
-    /** Tempo senza passi per entrare in stato di sosta (D42: 2,0 s) */
-    val stopNoStepTimeoutSeconds: Float = 2.0f, // da tarare
+    /** Tempo senza passi per entrare in stato di sosta (3,5 s per evitare false soste in camminata) */
+    val stopNoStepTimeoutSeconds: Float = 3.5f, // da tarare
 
     /** Numero di passi consecutivi richiesti per uscire dalla sosta e riprendere il ritmo (D42: 4 passi) */
     val stopResumeConsecutiveSteps: Int = 4, // da tarare

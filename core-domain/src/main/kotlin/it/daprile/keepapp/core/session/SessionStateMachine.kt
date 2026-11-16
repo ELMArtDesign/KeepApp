@@ -172,7 +172,7 @@ class SessionStateMachine(
         // l'accelerometro rileva un impatto netto con alta confidenza di cadenza, alimentiamo StopDetector
         // e il contatore passi di fallback (fondamentale per sessioni dove TYPE_STEP_DETECTOR ha latenza o è assente)
         if (latestPhase.justDetectedImpact &&
-            latestCadence.dynamicRmsMps2 >= config.minDynamicAccelRmsMps2 * 1.15f &&
+            latestCadence.dynamicRmsMps2 >= config.minDynamicAccelRmsMps2 &&
             (lastHardwareStepNs == 0L || timestampNs - lastHardwareStepNs > 1_800_000_000L)
         ) {
             totalStepsCount++
