@@ -33,8 +33,8 @@ data class KeepAppConfig(
     /** Taglio passa-basso su |a| per isolare la fondamentale del passo (D38: ~5,0 Hz) */
     val cadenceLowPassCutoffHz: Float = 5.0f, // da tarare
 
-    /** Durata della finestra scorrevole di autocorrelazione (tarata reattiva: 3,2 s) */
-    val cadenceWindowSeconds: Float = 3.2f, // da tarare
+    /** Durata della finestra scorrevole di autocorrelazione (D38: 4,0 s per risoluzione armonica) */
+    val cadenceWindowSeconds: Float = 4.0f, // da tarare
 
     /** Intervallo di aggiornamento della stima di cadenza (0,25 s per reazione rapida) */
     val cadenceUpdateIntervalSeconds: Float = 0.25f, // da tarare
@@ -52,7 +52,7 @@ data class KeepAppConfig(
     val cadenceConfidenceThreshold: Float = 0.32f, // da tarare
 
     /** Coefficiente di smussamento esponenziale (EMA) tra aggiornamenti consecutivi di cadenza valida */
-    val cadenceSmoothingAlpha: Float = 0.72f, // da tarare
+    val cadenceSmoothingAlpha: Float = 0.65f, // da tarare
 
     // =========================================================================
     // 2. CLASSIFICATORE DI POSIZIONE (PositionClassifier — D21) [DA TARARE]
