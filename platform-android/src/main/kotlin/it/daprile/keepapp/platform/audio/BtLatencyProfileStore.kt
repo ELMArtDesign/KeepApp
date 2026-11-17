@@ -195,4 +195,20 @@ class BtLatencyProfileStore(context: Context) {
             null
         }
     }
+
+    /**
+     * Salva/carica il ritardo reale dell'altoparlante interno (`X_vero = X_raw - R_mic` in ms)
+     * usato dalla "Prova a orecchio" affinché a Fine = 0 ms i due colpi coincidano.
+     */
+    fun savePhoneSpeakerDelayMs(xVeroMs: Float) {
+        prefs.edit().putFloat("phone_x_vero_ms", xVeroMs.coerceAtLeast(0f)).apply()
+    }
+
+    fun loadPhoneSpeakerDelayMs(): Float? {
+        return if (prefs.contains("phone_x_vero_ms")) {
+            prefs.getFloat("phone_x_vero_ms", 0f)
+        } else {
+            null
+        }
+    }
 }

@@ -1,5 +1,7 @@
 # KeepApp — Fase 0: Data Logger & Hardware Test Suite
 
+[![KeepApp CI](https://github.com/ELMArtDesign/KeepApp/actions/workflows/ci.yml/badge.svg)](https://github.com/ELMArtDesign/KeepApp/actions/workflows/ci.yml)
+
 > **Stato del progetto:** `Fase 0 – Strumento diagnostico e di acquisizione interno`  
 > **Piattaforma:** Android (`minSdk 26`, `targetSdk 36`) — Scritto in Kotlin + Jetpack Compose  
 > **Licenza:** [Apache License 2.0](LICENSE)

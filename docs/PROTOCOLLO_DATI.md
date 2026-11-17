@@ -78,6 +78,29 @@ Registra **8 brevi sessioni da 3 minuti ciascuna a schermo spento** (4 posizioni
 **Durata:** 60 minuti continui a schermo spento | **Obiettivo:** Verificare che non ci sia alcun buco `HEARTBEAT > 15 s` su un'ora intera e misurare il consumo reale di batteria e la temperatura.
 
 1. Nella scheda **`1. Sessione`** imposta la tua posizione preferita, `Corsa` (o camminata veloce), `5. Test sopravvivenza pura = OFF`.
+
+---
+
+## 🎯 Protocollo Taratura T1–T3 (App KeepApp — Fase 1A)
+
+Per le uscite di taratura **T1** e **T3** si usa direttamente **KeepApp (`it.daprile.keepapp`)**, scheda **`Live`**, senza modificare file a mano.
+
+### Convenzione Tasti Cuffia in Raccolta Dati (`T1`)
+1. Prima di avviare la sessione, attiva l'interruttore **`Raccolta dati T1 (1 tocco = Marker)`** nella scheda **`Live`**.
+   *(In questa modalità, `1 tocco` sulle `MANKIW-X15` registra un marker invece di mettere in pausa.)*
+2. Avvia **`AVVIA SESSIONE LIVE`** e segui la sequenza dei **4 marker**:
+   - **1° tocco cuffia** → **Inizio conteggio** (es. conta solo i passi del piede destro fino a `100` = `200` passi totali).
+   - **2° tocco cuffia** → **Inizio sosta reale** (fermati sul posto per ~10 secondi).
+   - **3° tocco cuffia** → **Fine sosta reale** (riprendi a camminare/correre continuando il conteggio).
+   - **4° tocco cuffia** → **Fine conteggio**.
+   *(Se registri solo **2 marker**, l'app imposterà `interval = "markers"` senza soste; con **4 marker** imposterà automaticamente sia `interval = "markers"` sia `real_stops = [[t2, t3]]`.)*
+3. Premi **`FERMA SESSIONE LIVE`**: si apre automaticamente la schermata **`Dati di riferimento`**:
+   - Inserisci **Passi contati** (es. `200`), **Posizione** (`Braccio` / `Mano` / `Vita` / `Tasca`), **Attività** (`Camminata` / `Corsa`), **Ambiente** (`Aperto` / `Chiuso`) ed eventuali **Note**.
+   - Premi **`Salva ground_truth.json`**: l'app salva il file direttamente nella cartella della sessione accanto a `sensors.bin` e `manifest.json`.
+
+### Matrice Uscite T1 (8 + 8 micro-sessioni da 3–5 minuti)
+- **Gruppo TARATURA (Giorno 1):** 8 sessioni `{Braccio, Mano, Vita, Tasca} × {Camminata, Corsa}`, ciascuna con 1 sosta reale di ~10 s.
+- **Gruppo VERIFICA (Altro giorno o percorso):** le stesse 8 sessioni ripetute in condizioni indipendenti (usate solo per validazione finale in `ReplayRegressionTest`, mai per tarare i parametri).
 2. *(Per non riempire inutilmente lo spazio con 60 minuti di file WAV da 350 MB, puoi lasciare `3. Registra Microfono = OFF` oppure tenerlo `ON` se hai almeno 1 GB libero).*
 3. Premi **`▶ AVVIA SESSIONE DI REGISTRAZIONE`**, **spegni subito lo schermo** e fai la tua sessione di **60 minuti**.
 4. Al termine premi **`⏹ FERMA E SALVA SESSIONE`**.

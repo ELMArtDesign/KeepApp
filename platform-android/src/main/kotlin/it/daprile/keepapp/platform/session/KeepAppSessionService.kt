@@ -43,6 +43,13 @@ import android.os.Process
 import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.core.content.ContextCompat
+import it.daprile.keepapp.core.format.ActivityKind
+import it.daprile.keepapp.core.format.BinaryFormat
+import it.daprile.keepapp.core.format.BinaryRecord
+import it.daprile.keepapp.core.format.SessionConfig
+import it.daprile.keepapp.platform.info.DeviceInfoCollector
+import it.daprile.keepapp.platform.storage.SessionFileWriter
+import java.io.File
 import it.daprile.keepapp.core.anchor.AnchorState
 import it.daprile.keepapp.core.audio.AudioMode
 import it.daprile.keepapp.core.config.KeepAppConfig
@@ -87,7 +94,11 @@ data class LiveSessionUiState(
     val voiceCoachEnabled: Boolean = true,
     val trainingPlan: TrainingPlanConfig = TrainingPlanConfig(),
     val audioTelemetry: AudioEngineTelemetry = AudioEngineTelemetry(),
-    val lastCompletedSummary: SessionSummaryRecord? = null
+    val lastCompletedSummary: SessionSummaryRecord? = null,
+    val dataCollectionMode: Boolean = false,
+    val markerRelTimesSec: List<Float> = emptyList(),
+    val lastCompletedSessionDir: String? = null,
+    val lastMarkerRelTimesSec: List<Float> = emptyList()
 )
 
 /**
@@ -108,6 +119,8 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         const val ACTION_SET_MANUAL_LEVEL = "it.daprile.keepapp.action.SET_MANUAL_LEVEL"
         const val ACTION_SET_VOICE_COACH = "it.daprile.keepapp.action.SET_VOICE_COACH"
         const val ACTION_SET_TRAINING_PLAN = "it.daprile.keepapp.action.SET_TRAINING_PLAN"
+        const val ACTION_SET_DATA_COLLECTION_MODE = "it.daprile.keepapp.action.SET_DATA_COLLECTION_MODE"
+        const val ACTION_ADD_MARKER = "it.daprile.keepapp.action.ADD_MARKER"
 
         const val EXTRA_AUDIO_MODE = "extra_audio_mode"
         const val EXTRA_PATTERN_ID = "extra_pattern_id"
@@ -119,6 +132,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         const val EXTRA_RAMP_START_BPM = "extra_ramp_start_bpm"
         const val EXTRA_RAMP_END_BPM = "extra_ramp_end_bpm"
         const val EXTRA_RAMP_MINUTES = "extra_ramp_minutes"
+        const val EXTRA_DATA_COLLECTION = "extra_data_collection"
 
         private const val CHANNEL_ID = "keepapp_live_session"
         private const val NOTIFICATION_ID = 4001
@@ -199,6 +213,13 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
 
     @Volatile
     private var trainingPlan: TrainingPlanConfig = TrainingPlanConfig()
+
+    @Volatile
+    private var dataCollectionMode: Boolean = false
+
+    private var fileWriter: SessionFileWriter? = null
+    private var sessionStartBootNs: Long = 0L
+    private val sessionMarkerRelTimesSec = ArrayList<Float>(16)
 
     @Volatile
     private var lastGpsSpeedMps: Float = 0f
@@ -305,6 +326,11 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
                     store.savePreferences(store.loadPreferences().copy(trainingPlan = plan))
                 }
             }
+            ACTION_SET_DATA_COLLECTION_MODE -> {
+                dataCollectionMode = intent.getBooleanExtra(EXTRA_DATA_COLLECTION, false)
+                _liveState.value = _liveState.value.copy(dataCollectionMode = dataCollectionMode)
+            }
+            ACTION_ADD_MARKER -> recordDataCollectionMarker()
         }
         return START_STICKY
     }
@@ -367,6 +393,27 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         }
         audioEngine = engine
         stateMachine = sm
+
+        sessionMarkerRelTimesSec.clear()
+        val startBootNs = SystemClock.elapsedRealtimeNanos()
+        sessionStartBootNs = startBootNs
+        val sessionsRoot = File(filesDir, "sessions")
+        fileWriter = SessionFileWriter(
+            sessionsRootDir = sessionsRoot,
+            config = SessionConfig(
+                position = PhonePosition.ARM,
+                activityKind = ActivityKind.RUN,
+                headphonesName = activeDeviceName,
+                enableMicrophone = false,
+                pureSurvivalMode = false
+            ),
+            deviceSnapshot = DeviceInfoCollector.collectDeviceSnapshot(this),
+            monotonicStartNs = startBootNs,
+            unixStartMs = nowMs,
+            appId = "it.daprile.keepapp",
+            milestoneTag = "Phase1A",
+            btLatencyMs = appliedBtLatencyMs
+        ).also { it.start() }
 
         requestAudioFocus()
         setupMediaSession()
@@ -458,6 +505,12 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         audioEngine = null
         stateMachine = null
 
+        val endBootNs = SystemClock.elapsedRealtimeNanos()
+        val writer = fileWriter
+        fileWriter = null
+        writer?.stopAndClose(endBootNs)
+        val completedDir = writer?.sessionDir?.absolutePath
+
         runCatching {
             if (wakeLock?.isHeld == true) wakeLock?.release()
         }
@@ -470,7 +523,10 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
             autoLevelEnabled = autoLevelEnabled,
             voiceCoachEnabled = voiceCoachEnabled,
             trainingPlan = trainingPlan,
-            lastCompletedSummary = completedSummary ?: _liveState.value.lastCompletedSummary
+            lastCompletedSummary = completedSummary ?: _liveState.value.lastCompletedSummary,
+            dataCollectionMode = dataCollectionMode,
+            lastCompletedSessionDir = completedDir ?: _liveState.value.lastCompletedSessionDir,
+            lastMarkerRelTimesSec = if (completedDir != null) sessionMarkerRelTimesSec.toList() else _liveState.value.lastMarkerRelTimesSec
         )
 
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -495,15 +551,41 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         val tsNs = event.timestamp
         when (event.sensor.type) {
             Sensor.TYPE_ACCELEROMETER -> {
+                fileWriter?.recordSensorClockCheck(tsNs, SystemClock.elapsedRealtimeNanos())
+                fileWriter?.enqueue(
+                    BinaryRecord.ofFloats(
+                        timestampNs = tsNs,
+                        recordType = BinaryFormat.TYPE_ACCEL,
+                        f0 = event.values[0],
+                        f1 = event.values[1],
+                        f2 = event.values[2]
+                    )
+                )
                 val snapshot = sm.onAccelerometer(tsNs, event.values[0], event.values[1], event.values[2])
                 if (snapshot != null) {
                     applySnapshotToAudioAndUi(snapshot)
                 }
             }
             Sensor.TYPE_GYROSCOPE -> {
+                fileWriter?.enqueue(
+                    BinaryRecord.ofFloats(
+                        timestampNs = tsNs,
+                        recordType = BinaryFormat.TYPE_GYRO,
+                        f0 = event.values[0],
+                        f1 = event.values[1],
+                        f2 = event.values[2]
+                    )
+                )
                 sm.onGyroscope(tsNs, event.values[0], event.values[1], event.values[2])
             }
             Sensor.TYPE_STEP_DETECTOR -> {
+                fileWriter?.enqueue(
+                    BinaryRecord.ofFloats(
+                        timestampNs = tsNs,
+                        recordType = BinaryFormat.TYPE_STEP,
+                        f0 = 1f
+                    )
+                )
                 sm.onStepDetectorEvent(tsNs)
             }
         }
@@ -520,7 +602,43 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         } else {
             SystemClock.elapsedRealtimeNanos()
         }
+        fileWriter?.enqueue(
+            BinaryRecord.ofFloats(
+                timestampNs = tsNs,
+                recordType = BinaryFormat.TYPE_GPS_A,
+                f0 = location.latitude.toFloat(),
+                f1 = location.longitude.toFloat(),
+                f2 = if (location.hasSpeed()) location.speed else -1f,
+                f3 = if (location.hasAccuracy()) location.accuracy else -1f
+            )
+        )
         sm.onGpsFix(tsNs, speed)
+    }
+
+    private fun recordDataCollectionMarker() {
+        val nowNs = SystemClock.elapsedRealtimeNanos()
+        val relSec = if (sessionStartBootNs > 0L && nowNs >= sessionStartBootNs) {
+            (nowNs - sessionStartBootNs) / 1_000_000_000f
+        } else 0f
+        val idx = sessionMarkerRelTimesSec.size + 1
+        sessionMarkerRelTimesSec.add(relSec)
+        fileWriter?.enqueue(
+            BinaryRecord.ofFloats(
+                timestampNs = nowNs,
+                recordType = BinaryFormat.TYPE_MARKER,
+                f0 = idx.toFloat(),
+                f1 = relSec
+            )
+        )
+        _liveState.value = _liveState.value.copy(markerRelTimesSec = sessionMarkerRelTimesSec.toList())
+        val label = when (idx) {
+            1 -> "1/4 Inizio conteggio"
+            2 -> "2/4 Inizio sosta"
+            3 -> "3/4 Fine sosta"
+            4 -> "4/4 Fine conteggio"
+            else -> "Marker #$idx"
+        }
+        updateNotification("Raccolta T1: $label (${"%.1f".format(relSec)} s)")
     }
 
     private fun applySnapshotToAudioAndUi(snapshot: SessionFrameSnapshot) {
@@ -618,6 +736,10 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
 
     private fun onHeadsetRawSingleTap() {
         mainHandler.post {
+            if (dataCollectionMode) {
+                recordDataCollectionMarker()
+                return@post
+            }
             if (!doubleTapSupported) {
                 // Cuffia senza doppio tocco (es. MANKIW-X15): singolo tocco immediato senza ritardo
                 handleTogglePause()

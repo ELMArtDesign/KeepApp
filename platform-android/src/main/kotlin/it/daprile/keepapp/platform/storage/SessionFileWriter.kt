@@ -38,7 +38,8 @@ class SessionFileWriter(
     private val monotonicStartNs: Long,
     private val unixStartMs: Long,
     private val appId: String = "it.daprile.keepapp.logger",
-    private val milestoneTag: String = "Phase1A-M0"
+    private val milestoneTag: String = "Phase1A-M0",
+    private val btLatencyMs: Float? = null
 ) {
     val sessionDir: File
 
@@ -168,6 +169,9 @@ class SessionFileWriter(
                 put("activity_code", config.activityKind.code)
                 put("activity_label", config.activityKind.labelIt)
                 put("headphones_name", config.headphonesName)
+                if (btLatencyMs != null) {
+                    put("bt_latency_ms", btLatencyMs.toDouble())
+                }
                 put("microphone_enabled", config.enableMicrophone)
                 put("pure_survival_mode", config.pureSurvivalMode)
 
