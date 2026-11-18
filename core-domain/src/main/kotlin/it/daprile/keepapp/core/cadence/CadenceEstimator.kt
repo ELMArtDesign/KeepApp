@@ -445,8 +445,9 @@ class CadenceEstimator(
             }
 
             /**
-             * Calcola il ritardo di gruppo analitico (in nanosecondi) della cascata passa-banda
-             * (`highPass` + `lowPass`) alla frequenza `frequencyHz` (cadenza in passi/secondo).
+             * Calcola il ritardo di fase analitico (in nanosecondi) della cascata passa-banda
+             * (`highPass` + `lowPass`) alla frequenza `frequencyHz` (`-φ(ω) / ω`), che determina
+             * lo spostamento temporale esatto dei picchi periodici della cadenza corrente.
              */
             fun computeBandpassGroupDelayNs(
                 sampleRateHz: Float,
@@ -458,14 +459,9 @@ class CadenceEstimator(
                 val f = frequencyHz.toDouble().coerceIn(0.2, fs * 0.40)
                 val hp = highPass(fs.toFloat(), hpCutoffHz)
                 val lp = lowPass(fs.toFloat(), lpCutoffHz)
-                val df = 0.01
-                val p1 = totalPhaseRad(hp, lp, (f - df).coerceAtLeast(0.05), fs)
-                val p2 = totalPhaseRad(hp, lp, (f + df).coerceAtMost(fs * 0.45), fs)
-                var dp = p2 - p1
-                while (dp > PI) dp -= 2.0 * PI
-                while (dp < -PI) dp += 2.0 * PI
-                val gdSec = (-dp / (2.0 * PI * 2.0 * df)).coerceIn(0.0, 0.5)
-                return (gdSec * 1_000_000_000.0).toLong()
+                val phaseRad = totalPhaseRad(hp, lp, f, fs)
+                val phaseDelaySec = (-phaseRad / (2.0 * PI * f)).coerceIn(-0.1, 0.5)
+                return (phaseDelaySec * 1_000_000_000.0).toLong()
             }
 
             private fun totalPhaseRad(hp: BiquadFilter, lp: BiquadFilter, f: Double, fs: Double): Double {
