@@ -1,7 +1,7 @@
 # Protocollo di Raccolta Dati su Strada — Chiusura Fase 0 (`docs/PROTOCOLLO_DATI.md`)
 
 > **Destinatario:** Adriano D'Aprile
-> **Applicazione da usare sul telefono:** **Moventure Logger (Fase 0)** (`it.daprile.keepapp.logger`, modulo `:logger`)
+> **Applicazione da usare sul telefono:** **Moventure Logger (Fase 0)** (`it.daprile.moventure.logger`, modulo `:logger`) per **T1**; **Moventure** (`it.daprile.moventure`, modulo `:app`) per **T3**.
 > **Scopo:** Raccogliere i 4 tracciati reali su strada necessari per sbloccare la taratura finale degli algoritmi della **Fase 1A** (decisioni D33 e D34).
 
 ---
@@ -83,7 +83,7 @@ Registra **8 brevi sessioni da 3 minuti ciascuna a schermo spento** (4 posizioni
 
 ## 🎯 Protocollo Taratura T1–T3 (App Moventure — Fase 1A)
 
-Per le uscite di taratura **T1** e **T3** si usa direttamente **Moventure (`it.daprile.keepapp`)**, scheda **`Live`**, senza modificare file a mano.
+Per le uscite di taratura **T1** si usa **Moventure Logger (Fase 0)** (`it.daprile.moventure.logger`), mentre per **T3** (sessioni live con audio adattivo e diagnostica) si usa **Moventure** (`it.daprile.moventure`), scheda **`Live`**.
 
 ### Convenzione Tasti Cuffia in Raccolta Dati (`T1`)
 1. Prima di avviare la sessione, attiva l'interruttore **`Raccolta dati T1 (1 tocco = Marker)`** nella scheda **`Live`**.
@@ -102,6 +102,16 @@ Per le uscite di taratura **T1** e **T3** si usa direttamente **Moventure (`it.d
 - **Priorità di taratura (`A10`):** **`Polso` (`WRIST`)** è la posizione principale usata da Adriano e ha priorità. Ordine consigliato: **1) `Polso – Camminata`**, **2) `Polso – Corsa`**, poi tutte le altre.
 - **Gruppo TARATURA (Giorno 1):** 10 sessioni `{Polso, Braccio, Mano, Vita, Tasca} × {Camminata, Corsa}`, ciascuna con 1 sosta reale di ~10 s.
 - **Gruppo VERIFICA (Altro giorno o percorso):** le stesse 10 sessioni ripetute in condizioni indipendenti (usate solo per validazione finale in `ReplayRegressionTest`, mai per tarare i parametri).
+### Cosa misurano le sessioni T1 del Logger (e cosa richiede T3)
+- **Dalle sessioni T1 (`Moventure Logger (Fase 0)`):** il Logger registra i dati grezzi dei sensori senza programmare colpi ritmici reali. Il Replay Harness (`:replay` / `SessionReplayEngine`) calcola da queste sessioni:
+  - **Errore di cadenza** (`%` rispetto al ground truth dei passi contati e rispetto allo `STEP_DETECTOR` di sistema);
+  - **Conteggio di `FootstrikeReferenceDetector`** (appoggi rilevati offline dall'IMU);
+  - **Posizione stimata** dal `PositionClassifier` (incluso **`Polso` / `WRIST`**) e cambi posizione;
+  - **False soste e soste mancate** (confronto tra `StopDetector` e `real_stops`);
+  - **Tempo di aggancio** (`lockTimeSeconds`);
+  - **Errore di fase *solo simulato* offline** (simulazione di `BeatScheduler` a 48 kHz rispetto a `FootstrikeReferenceDetector`, senza colpi audio reali né offset delle cuffie).
+- **Errore di fase reale (`< 30 ms` all'orecchio — verifica in T3):** richiede i colpi audio effettivamente programmati e l'offset misurato della cuffia (`EarSync` + `R_mic`), quindi si verifica in **T3** con le sessioni dell'app **Moventure** (`it.daprile.moventure`, registrazione diagnostica debug + validazione a orecchio).
+
 2. *(Per non riempire inutilmente lo spazio con 60 minuti di file WAV da 350 MB, puoi lasciare `3. Registra Microfono = OFF` oppure tenerlo `ON` se hai almeno 1 GB libero).*
 3. Premi **`▶ AVVIA SESSIONE DI REGISTRAZIONE`**, **spegni subito lo schermo** e fai la tua sessione di **60 minuti**.
 4. Al termine premi **`⏹ FERMA E SALVA SESSIONE`**.
