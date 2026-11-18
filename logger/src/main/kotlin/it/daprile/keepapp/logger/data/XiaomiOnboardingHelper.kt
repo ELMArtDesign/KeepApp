@@ -71,7 +71,7 @@ object XiaomiOnboardingHelper {
                     "com.miui.powerkeeper.ui.HiddenAppsConfigActivity"
                 )
                 putExtra("package_name", context.packageName)
-                putExtra("package_label", "KeepApp Logger")
+                putExtra("package_label", context.applicationInfo.loadLabel(context.packageManager).toString())
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(miuiBatteryIntent)

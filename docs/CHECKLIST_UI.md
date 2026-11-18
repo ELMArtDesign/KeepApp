@@ -1,4 +1,4 @@
-# Checklist UI KeepApp (`docs/CHECKLIST_UI.md` — Step B)
+# Checklist UI Moventure (`docs/CHECKLIST_UI.md` — Step B)
 
 Documento di riferimento per l'architettura UI di `:app` dopo la suddivisione di `MainActivity.kt` in schermate dedicate (`it.daprile.keepapp.ui`).
 

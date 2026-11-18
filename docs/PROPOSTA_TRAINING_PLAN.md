@@ -4,7 +4,7 @@
 
 ## 1. Obiettivo
 Permettere al runner di scegliere tra tre modalità di guida ritmica durante una sessione:
-1. **`ADAPTIVE_ANCHOR` (Ancora Elastica — default D40):** comportamento classico di KeepApp; il ritmo si aggancia alla cadenza naturale dell'utente e la sostiene nei cali temporanei.
+1. **`ADAPTIVE_ANCHOR` (Ancora Elastica — default D40):** comportamento classico di Moventure; il ritmo si aggancia alla cadenza naturale dell'utente e la sostiene nei cali temporanei.
 2. **`FIXED_TARGET` (Target Fisso):** il ritmo suona a un BPM costante scelto dall'utente (`90..200 BPM`) fin dall'inizio della sessione, per allenare una cadenza specifica.
 3. **`PROGRESSIVE_RAMP` (Progressione Lineare):** il ritmo parte da `rampStartBpm` e sale (o scende) linearmente fino a `rampEndBpm` nell'arco di `rampDurationMinutes` (`5..60 min`).
 

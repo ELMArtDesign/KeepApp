@@ -767,7 +767,7 @@ class LoggerForegroundService : Service(), SensorEventListener, LocationListener
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "KeepApp Sessione Attiva",
+                "${applicationInfo.loadLabel(packageManager)} — Sessione Attiva",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Corsa attiva: guida vocale e ritmo in funzione (Fase 0 Logger)"

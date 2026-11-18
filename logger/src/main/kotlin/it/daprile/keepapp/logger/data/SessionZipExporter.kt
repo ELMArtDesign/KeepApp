@@ -118,7 +118,7 @@ object SessionZipExporter {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/zip"
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "KeepApp Fase 0 — ${sessionDir.name}")
+                putExtra(Intent.EXTRA_SUBJECT, "Moventure Fase 0 — ${sessionDir.name}")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             val chooser = Intent.createChooser(shareIntent, "Esporta / Condividi ${zipFile.name}").apply {

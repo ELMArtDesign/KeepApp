@@ -1,4 +1,4 @@
-# Guida al Replay Harness KeepApp (`docs/REPLAY.md`)
+# Guida al Replay Harness Moventure (`docs/REPLAY.md`)
 
 Il modulo `:replay` esegue **offline sul PC** gli stessi algoritmi di `:core-domain` (`SessionStateMachine`, `BeatScheduler`, `KeepAppConfig`) sulle sessioni binarie registrate (`sensors.bin` + `manifest.json`), confrontandoli con un rilevatore offline indipendente (`FootstrikeReferenceDetector`).
 

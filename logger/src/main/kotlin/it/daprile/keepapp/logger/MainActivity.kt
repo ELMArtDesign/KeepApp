@@ -175,7 +175,7 @@ fun KeepAppLoggerRoot() {
                     .padding(top = 12.dp)
             ) {
                 Text(
-                    text = "KeepApp Logger — Fase 0 / 1A-M0",
+                    text = "Moventure Logger — Fase 0 / 1A-M0",
                     color = Color.White,
                     fontSize = 19.sp,
                     fontWeight = FontWeight.Bold,
@@ -517,7 +517,7 @@ fun Media3DuckingAndXiaomiScreen() {
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Passo 1: Attiva 'Avvio automatico in background' per KeepApp Logger.",
+                    text = "Passo 1: Attiva 'Avvio automatico in background' per Moventure Logger.",
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )
@@ -554,7 +554,7 @@ fun Media3DuckingAndXiaomiScreen() {
                     fontSize = 13.sp
                 )
                 Text(
-                    text = "Apri la vista delle App Recenti (tasto quadrato in basso), tieni premuto per 1 secondo sulla scheda di KeepApp Logger e tocca l'icona del Lucchetto 🔒.",
+                    text = "Apri la vista delle App Recenti (tasto quadrato in basso), tieni premuto per 1 secondo sulla scheda di Moventure Logger e tocca l'icona del Lucchetto 🔒.",
                     fontSize = 12.sp,
                     color = Color.DarkGray
                 )

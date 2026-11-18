@@ -1,6 +1,6 @@
-# KeepApp — Fase 0: Data Logger & Hardware Test Suite
+# Moventure (ex KeepApp) — Adaptive Rhythm Runner
 
-[![KeepApp CI](https://github.com/ELMArtDesign/KeepApp/actions/workflows/ci.yml/badge.svg)](https://github.com/ELMArtDesign/KeepApp/actions/workflows/ci.yml)
+[![Moventure CI](https://github.com/ELMArtDesign/KeepApp/actions/workflows/ci.yml/badge.svg)](https://github.com/ELMArtDesign/KeepApp/actions/workflows/ci.yml)
 
 > **Stato del progetto:** `Fase 0 – Strumento diagnostico e di acquisizione interno`  
 > **Piattaforma:** Android (`minSdk 26`, `targetSdk 36`) — Scritto in Kotlin + Jetpack Compose  
@@ -11,7 +11,7 @@
 ## ⚠️ Avvertenza Importante (Disclaimer)
 
 **Questo software NON è un dispositivo medico, NON fornisce diagnosi o consigli sanitari e NON è un sistema di sicurezza o di allerta garantito.**  
-L'applicazione **KeepApp Logger (`it.daprile.keepapp.logger`)** è uno strumento tecnico interno di Fase 0 progettato esclusivamente per registrare i dati grezzi dei sensori inerziali (IMU), del GPS e del banco di prova audio su smartphone Android durante sessioni di camminata e corsa, al fine di calibrare gli algoritmi del progetto *KeepApp (Adaptive Rhythm Runner)*.
+L'applicazione **Moventure Logger (`it.daprile.keepapp.logger`)** è uno strumento tecnico interno di Fase 0 progettato esclusivamente per registrare i dati grezzi dei sensori inerziali (IMU), del GPS e del banco di prova audio su smartphone Android durante sessioni di camminata e corsa, al fine di calibrare gli algoritmi del progetto *Moventure (Adaptive Rhythm Runner)*.
 
 Durante qualsiasi attività su strada o all'aperto, l'utente è l'unico responsabile della propria attenzione e sicurezza.
 
@@ -53,4 +53,4 @@ Prima di sviluppare gli algoritmi definitivi di cadenza adattiva, fase del passo
 3. Attendi che Android Studio completi il **Gradle Sync** automatico (in basso a destra vedrai la barra di avanzamento; alla prima apertura scaricherà il wrapper Gradle e le dipendenze AndroidX).
 4. Collega il tuo **Xiaomi Redmi Note 11 Pro 5G** al PC con il cavo USB (assicurati che nelle *Opzioni Sviluppatore* del telefono siano attivi **Debug USB** e **Installa via USB**).
 5. In alto in Android Studio, verifica che sia selezionato `app` accanto al tuo dispositivo Xiaomi e premi il pulsante verde **Run (▶)**.
-6. L'app **KeepApp Logger** si avvierà automaticamente sul telefono.
+6. L'app **Moventure Logger** si avvierà automaticamente sul telefono.

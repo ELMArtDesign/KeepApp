@@ -1,6 +1,6 @@
 # Risultati Sperimentali della Fase 0 (`docs/RISULTATI_FASE0.md`)
 
-> Questo documento raccoglie i risultati oggettivi misurati con **KeepApp Logger (Fase 0)** sullo smartphone di riferimento e analizzati tramite `tools/read_session.py` / ispezione binaria, senza alcun dato personale o coordinata geografica privata.
+> Questo documento raccoglie i risultati oggettivi misurati con **Moventure Logger (Fase 0)** sullo smartphone di riferimento e analizzati tramite `tools/read_session.py` / ispezione binaria, senza alcun dato personale o coordinata geografica privata.
 
 ## 1. Ambiente di Test
 * **Dispositivo:** Xiaomi Redmi Note 11 Pro 5G (`2201116SG` / `veux`)

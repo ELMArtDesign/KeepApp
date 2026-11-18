@@ -1,6 +1,6 @@
 # Specifica del Formato Dati di Sessione (`docs/FORMAT.md`)
 
-Questo documento definisce in modo formale e bit-accurate il formato dei file generati da **KeepApp Logger (Fase 0)**.
+Questo documento definisce in modo formale e bit-accurate il formato dei file generati da **Moventure Logger (Fase 0)**.
 
 Ogni sessione di registrazione viene salvata in una cartella dedicata con nome:
 ```text

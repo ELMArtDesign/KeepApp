@@ -1,7 +1,7 @@
 # Protocollo di Raccolta Dati su Strada — Chiusura Fase 0 (`docs/PROTOCOLLO_DATI.md`)
 
 > **Destinatario:** Adriano D'Aprile
-> **Applicazione da usare sul telefono:** **KeepApp Logger (Fase 0)** (`it.daprile.keepapp.logger`, modulo `:logger`)
+> **Applicazione da usare sul telefono:** **Moventure Logger (Fase 0)** (`it.daprile.keepapp.logger`, modulo `:logger`)
 > **Scopo:** Raccogliere i 4 tracciati reali su strada necessari per sbloccare la taratura finale degli algoritmi della **Fase 1A** (decisioni D33 e D34).
 
 ---
@@ -20,7 +20,7 @@
 ## 🏃 Test 1 — Conteggio di riferimento dei 200 passi (`D33c`) + Tasti Cuffie (`D34`)
 **Durata:** ~2–3 minuti | **Obiettivo:** Misurare l'errore esatto dello Step Detector e dell'algoritmo di cadenza (obiettivo errore `< 2%`).
 
-1. Apri **KeepApp Logger (Fase 0)** nella scheda **`1. Sessione`**.
+1. Apri **Moventure Logger (Fase 0)** nella scheda **`1. Sessione`**.
 2. Imposta:
    * **Posizione:** `Tasca` (o `Braccio (Fascia)`)
    * **Attività:** `Camminata` (e poi ripeti una seconda volta con `Corsa`)
@@ -62,9 +62,9 @@ Registra **8 brevi sessioni da 3 minuti ciascuna a schermo spento** (4 posizioni
 ---
 
 ## 🛡️ Test 3 — Sopravvivenza in Background SENZA MediaSession / SENZA AudioTrack (`D33d` — Scenario Spotify)
-**Durata:** 30–60 minuti a schermo spento | **Obiettivo:** Verificare che HyperOS non chiuda il servizio quando KeepApp non riproduce audio proprio (scenario in cui l'utente ascolta Spotify).
+**Durata:** 30–60 minuti a schermo spento | **Obiettivo:** Verificare che HyperOS non chiuda il servizio quando Moventure non riproduce audio proprio (scenario in cui l'utente ascolta Spotify).
 
-1. Nella scheda **`1. Sessione`** di KeepApp Logger:
+1. Nella scheda **`1. Sessione`** di Moventure Logger:
    * Disattiva **`3. Registra Microfono`** (`OFF`).
    * Disattiva **`4. Metronomo in Sessione`** (`OFF`).
    * **ATTIVA l'interruttore `5. Test sopravvivenza pura (D33d — Zero MediaSession / AudioTrack)` (`ON`)**.
@@ -81,9 +81,9 @@ Registra **8 brevi sessioni da 3 minuti ciascuna a schermo spento** (4 posizioni
 
 ---
 
-## 🎯 Protocollo Taratura T1–T3 (App KeepApp — Fase 1A)
+## 🎯 Protocollo Taratura T1–T3 (App Moventure — Fase 1A)
 
-Per le uscite di taratura **T1** e **T3** si usa direttamente **KeepApp (`it.daprile.keepapp`)**, scheda **`Live`**, senza modificare file a mano.
+Per le uscite di taratura **T1** e **T3** si usa direttamente **Moventure (`it.daprile.keepapp`)**, scheda **`Live`**, senza modificare file a mano.
 
 ### Convenzione Tasti Cuffia in Raccolta Dati (`T1`)
 1. Prima di avviare la sessione, attiva l'interruttore **`Raccolta dati T1 (1 tocco = Marker)`** nella scheda **`Live`**.
@@ -110,7 +110,7 @@ Per le uscite di taratura **T1** e **T3** si usa direttamente **KeepApp (`it.dap
 
 ## 💾 Come esportare le sessioni e passarle al PC
 
-1. Nella scheda **`1. Sessione`** di KeepApp Logger, scorri in basso fino a **`Sessioni salvate in memoria locale`**.
+1. Nella scheda **`1. Sessione`** di Moventure Logger, scorri in basso fino a **`Sessioni salvate in memoria locale`**.
 2. Su ciascuna sessione registrata, tocca il pulsante verde **`💾 Salva .ZIP in Download`**.
-3. Collega il telefono al PC con il cavo USB, apri la cartella **`Download/KeepApp_Exports`** del telefono e copia i file `.zip` in una cartella sul tuo PC **FUORI dal repository Git** (ad esempio `C:\Users\Lorenzo\Desktop\SessioniKeepApp\`).
+3. Collega il telefono al PC con il cavo USB, apri la cartella **`Download/Moventure_Exports`** del telefono e copia i file `.zip` in una cartella sul tuo PC **FUORI dal repository Git** (ad esempio `C:\Users\Lorenzo\Desktop\SessioniMoventure\`).
 4. **ATTENZIONE PRIVACY:** Non copiare mai i file `.zip`, `.bin` o `.wav` dentro `C:\Users\Lorenzo\Desktop\KeepApp\` (anche se `.gitignore` li blocca già automaticamente).

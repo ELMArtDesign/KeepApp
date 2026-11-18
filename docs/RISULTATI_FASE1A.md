@@ -1,6 +1,6 @@
 # Risultati e Criteri di Accettazione della Fase 1A (`docs/RISULTATI_FASE1A.md`)
 
-> Questo documento traccia lo stato reale dei criteri di accettazione della **Fase 1A** di KeepApp (`it.daprile.keepapp`) sullo Xiaomi Redmi Note 11 Pro 5G + cuffie a conduzione ossea `MANKIW-X15`.
+> Questo documento traccia lo stato reale dei criteri di accettazione della **Fase 1A** di Moventure (`it.daprile.keepapp`) sullo Xiaomi Redmi Note 11 Pro 5G + cuffie a conduzione ossea `MANKIW-X15`.
 
 ## 1. Tabella dei Criteri di Accettazione (Fase 1A)
 
@@ -20,7 +20,7 @@
 
 ### Passaggio da `248 ms` (Fase 0) a `153,4 ms ± 5,3 ms` (Milestone 3)
 - **Vecchio riferimento (`248,4 ms ± 2,9 ms` in Fase 0):** il logger Fase 0 stimava l'istante di emissione dell'impulso al **ritorno di `AudioTrack.write()`** (prima che il buffer interno di `AudioTrack` + HAL fosse effettivamente consegnato al driver Bluetooth) e senza normalizzazione unificata tra `CLOCK_MONOTONIC` e `TIMEBASE_BOOTTIME`. Quel valore includeva quindi anche il buffer di scrittura lato app (~80–95 ms).
-- **Nuovo riferimento (`153,4 ms ± 5,3 ms` in KeepApp M3):** l'impulso viene mappato tramite **`AudioClockEstimator` (regressione OLS su `AudioTrack.getTimestamp()` normalizzato a `TIMEBASE_BOOTTIME`)** per conoscere l'istante reale di consegna all'uscita hardware, confrontato con l'istante di cattura microfono `AudioRecord` su `TIMEBASE_BOOTTIME` (`4/5` impulsi validi filtrati con MAD: `151.1, 163.2, 155.7, 149.5 ms`, outlier iniziale `173.5 ms` scartato).
+- **Nuovo riferimento (`153,4 ms ± 5,3 ms` in Moventure M3):** l'impulso viene mappato tramite **`AudioClockEstimator` (regressione OLS su `AudioTrack.getTimestamp()` normalizzato a `TIMEBASE_BOOTTIME`)** per conoscere l'istante reale di consegna all'uscita hardware, confrontato con l'istante di cattura microfono `AudioRecord` su `TIMEBASE_BOOTTIME` (`4/5` impulsi validi filtrati con MAD: `151.1, 163.2, 155.7, 149.5 ms`, outlier iniziale `173.5 ms` scartato).
 - *(Nota: il test "Batti a tempo" aveva restituito `92,1 ms ± 12,1 ms` su `14/16` tap validi a causa della fisiologica *negative mean asynchrony* umana di ~50–60 ms su click regolari; la misura oggettiva usata dal profilo `MANKIW-X15` è `153,4 ms`.)*
 
 ### Validazione a Orecchio della Latenza Calibrata
