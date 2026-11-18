@@ -1,8 +1,12 @@
-KeepApp — Fase 0: Data Logger & Hardware Test Suite
+Moventure (ex KeepApp)
 Copyright 2026 Adriano D'Aprile
 
-This product includes software developed for the KeepApp project
-(Adaptive Rhythm Runner), licensed under the Apache License, Version 2.0.
+This product includes software developed for the Moventure project
+(formerly KeepApp / Adaptive Rhythm Runner), licensed under the Apache License, Version 2.0.
 
 Third-party libraries and components used by this project are listed
 in LICENSES.md along with their respective open-source licenses.
+
+App icon: original vector artwork created with the assistance of an AI model
+(Claude, Anthropic) for the Moventure project; sources in docs/brand/.
+Distributed under the same Apache License, Version 2.0.

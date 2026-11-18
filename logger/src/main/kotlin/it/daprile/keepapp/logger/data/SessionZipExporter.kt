@@ -30,7 +30,7 @@ import java.util.zip.ZipOutputStream
  * Esportatore delle sessioni di registrazione come archivio `.zip` (F10 — Milestone 5).
  *
  * Offre due modalità:
- * 1. Salvataggio diretto nella cartella pubblica `Download/KeepApp_Exports/` dello smartphone
+ * 1. Salvataggio diretto nella cartella pubblica `Download/Moventure_Exports/` dello smartphone
  *    tramite `MediaStore.Downloads` (nessun permesso di archiviazione necessario su Android 10+).
  * 2. Condivisione tramite il selettore di sistema (`Intent.ACTION_SEND` + `FileProvider`).
  *
@@ -41,7 +41,7 @@ import java.util.zip.ZipOutputStream
 object SessionZipExporter {
 
     /**
-     * Esporta la cartella `sessionDir` in un file `.zip` dentro `Download/KeepApp_Exports/`.
+     * Esporta la cartella `sessionDir` in un file `.zip` dentro `Download/Moventure_Exports/`.
      * Restituisce un messaggio con il percorso e la dimensione del file salvato.
      */
     fun exportToDownloads(context: Context, sessionDir: File): String {
@@ -55,7 +55,7 @@ object SessionZipExporter {
                     put(MediaStore.Downloads.MIME_TYPE, "application/zip")
                     put(
                         MediaStore.Downloads.RELATIVE_PATH,
-                        Environment.DIRECTORY_DOWNLOADS + "/KeepApp_Exports"
+                        Environment.DIRECTORY_DOWNLOADS + "/Moventure_Exports"
                     )
                     put(MediaStore.Downloads.IS_PENDING, 1)
                 }
@@ -76,7 +76,7 @@ object SessionZipExporter {
                     bytesWritten = pfd.statSize
                 }
                 val sizeKb = bytesWritten / 1024L
-                "✅ Salvato in Download/KeepApp_Exports/$zipFileName ($sizeKb KB)"
+                "✅ Salvato in Download/Moventure_Exports/$zipFileName ($sizeKb KB)"
             } else {
                 @Suppress("DEPRECATION")
                 val pubDir = File(
@@ -89,7 +89,7 @@ object SessionZipExporter {
                     writeSessionToZipStream(context, sessionDir, fos)
                 }
                 val sizeKb = outFile.length() / 1024L
-                "✅ Salvato in Download/KeepApp_Exports/$zipFileName ($sizeKb KB)"
+                "✅ Salvato in Download/Moventure_Exports/$zipFileName ($sizeKb KB)"
             }
         } catch (e: Exception) {
             "❌ Errore esportazione: ${e.message}"

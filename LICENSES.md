@@ -35,4 +35,5 @@ Queste librerie vengono eseguite esclusivamente sul PC di sviluppo per leggere e
 ## 3. Asset Audio e Pattern Ritmici
 
 * Tutti i segnali acustici e i timbri percussivi utilizzati nella Fase 0 e nella Fase 1A (impulsi del metronomo, cassa ottimizzata per conduzione ossea, rullante, charleston, accento di rinforzo e chirp di calibrazione latenza) sono **generati matematicamente via codice a runtime** direttamente dall'applicazione (sintesi PCM in memoria) e sono pertanto rilasciati sotto la medesima licenza **Apache License 2.0** del progetto.
-* I pattern ritmici in formato JSON (`assets/patterns/*.json`) sono opere originali create per il progetto KeepApp e rilasciate sotto licenza **Apache License 2.0**.
+* I pattern ritmici in formato JSON (`assets/patterns/*.json`) sono opere originali create per il progetto Moventure (ex KeepApp) e rilasciate sotto licenza **Apache License 2.0**.
+* **Icona adattiva dell'app** (`ic_launcher_foreground`, `ic_launcher_background`, `ic_launcher_monochrome` in `app/` e `logger/`, più `docs/store/play_store_icon_512.png`): opera originale del progetto Moventure realizzata con assistenza IA e rilasciata sotto licenza **Apache License 2.0** (sorgenti vettoriali in `docs/brand/`).
