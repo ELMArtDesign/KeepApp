@@ -1,0 +1,46 @@
+{
+  "pack_id": "c3_test_it",
+  "language": "it",
+  "phrases": [
+    {
+      "id": "lock_ok",
+      "text": "Ritmo agganciato. Tieni questa cadenza."
+    },
+    {
+      "id": "drop_reinforce",
+      "text": "Sei appena sotto il ritmo, resta sul battito."
+    },
+    {
+      "id": "adapt_down",
+      "text": "Adatto il tempo al tuo passo attuale."
+    },
+    {
+      "id": "stop_detected",
+      "text": "Sosta rilevata. Audio attenuato."
+    },
+    {
+      "id": "resume_run",
+      "text": "Bentornato in corsa, riprendiamo il ritmo."
+    },
+    {
+      "id": "session_pause",
+      "text": "Sessione in pausa."
+    },
+    {
+      "id": "session_resume",
+      "text": "Sessione ripresa."
+    },
+    {
+      "id": "halfway",
+      "text": "Metà sessione completata, passo regolare."
+    },
+    {
+      "id": "cadence_up",
+      "text": "Ottima spinta, cadenza stabile."
+    },
+    {
+      "id": "cooldown",
+      "text": "Ultimo minuto, sciogli il passo."
+    }
+  ]
+}
