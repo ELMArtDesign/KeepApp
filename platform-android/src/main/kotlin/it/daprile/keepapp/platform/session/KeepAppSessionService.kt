@@ -854,11 +854,14 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
+    private fun resolveAppName(): String =
+        applicationInfo.loadLabel(packageManager).toString()
+
     private fun createNotificationChannel() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Sessione Live KeepApp",
+            "Sessione Live ${resolveAppName()}",
             NotificationManager.IMPORTANCE_LOW
         )
         nm.createNotificationChannel(channel)
@@ -884,7 +887,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
         )
 
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("KeepApp — Sessione Attiva")
+            .setContentTitle("${resolveAppName()} — Sessione Attiva")
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true)

@@ -33,9 +33,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import it.daprile.keepapp.R
 import it.daprile.keepapp.platform.session.KeepAppSessionService
 
 @Composable
@@ -76,7 +78,7 @@ fun KeepAppMainScreen(holder: KeepAppUiStateHolder) {
         topBar = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "KeepApp — Fase 1A",
+                    text = "${stringResource(R.string.app_name)} — Fase 1A",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 6.dp)

@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import it.daprile.keepapp.R
 import it.daprile.keepapp.platform.audio.BtLatencyProfileStore
 import it.daprile.keepapp.platform.audio.EarCheckLogEntry
 import it.daprile.keepapp.platform.audio.EarSyncUiState
@@ -236,7 +237,8 @@ fun EarSyncSection(
                         onClick = {
                             val fullText = earCheckLogs.joinToString("\n") { formatLogEntry(it) }
                             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            cm.setPrimaryClip(ClipData.newPlainText("KeepApp Prova a orecchio", fullText))
+                            val appLabel = context.getString(R.string.app_name)
+                            cm.setPrimaryClip(ClipData.newPlainText("$appLabel Prova a orecchio", fullText))
                             earLogExportStatus = "Copiati tutti i ${earCheckLogs.size} esiti negli appunti."
                         },
                         modifier = Modifier.weight(1f)

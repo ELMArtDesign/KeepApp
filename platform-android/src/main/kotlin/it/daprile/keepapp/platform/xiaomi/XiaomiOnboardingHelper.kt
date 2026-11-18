@@ -46,7 +46,10 @@ object XiaomiOnboardingHelper {
         return openAppDetailsSettings(context)
     }
 
-    fun openXiaomiBatterySaverForApp(context: Context, appLabel: String = "KeepApp"): String {
+    fun openXiaomiBatterySaverForApp(
+        context: Context,
+        appLabel: String = context.applicationInfo.loadLabel(context.packageManager).toString()
+    ): String {
         try {
             val miuiBatteryIntent = Intent().apply {
                 component = ComponentName(
