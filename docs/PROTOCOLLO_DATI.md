@@ -99,6 +99,7 @@ Per le uscite di taratura **T1** e **T3** si usa direttamente **KeepApp (`it.dap
    - Premi **`Salva ground_truth.json`**: l'app salva il file direttamente nella cartella della sessione accanto a `sensors.bin` e `manifest.json`.
 
 ### Matrice Uscite T1 (10 + 10 micro-sessioni da 3–5 minuti)
+- **Priorità di taratura (`A10`):** **`Polso` (`WRIST`)** è la posizione principale usata da Adriano e ha priorità. Ordine consigliato: **1) `Polso – Camminata`**, **2) `Polso – Corsa`**, poi tutte le altre.
 - **Gruppo TARATURA (Giorno 1):** 10 sessioni `{Polso, Braccio, Mano, Vita, Tasca} × {Camminata, Corsa}`, ciascuna con 1 sosta reale di ~10 s.
 - **Gruppo VERIFICA (Altro giorno o percorso):** le stesse 10 sessioni ripetute in condizioni indipendenti (usate solo per validazione finale in `ReplayRegressionTest`, mai per tarare i parametri).
 2. *(Per non riempire inutilmente lo spazio con 60 minuti di file WAV da 350 MB, puoi lasciare `3. Registra Microfono = OFF` oppure tenerlo `ON` se hai almeno 1 GB libero).*

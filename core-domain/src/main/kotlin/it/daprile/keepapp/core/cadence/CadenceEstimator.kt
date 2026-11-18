@@ -263,7 +263,7 @@ class CadenceEstimator(
             if (doubleSpm <= config.maxCadenceSpm) {
                 val stepDetPrefersDouble = lastStepDetectorSpm > 0f &&
                         abs(doubleSpm - lastStepDetectorSpm) < abs(candidateSpm - lastStepDetectorSpm)
-                val asymmetricPosition = (position == PhonePosition.POCKET || position == PhonePosition.HAND)
+                val asymmetricPosition = (position == PhonePosition.POCKET || position == PhonePosition.HAND || position == PhonePosition.WRIST)
                 val hasStepHarmonic = harmonicEnergySum > 0.20f && prominenceOverQuarter > 0.12f
 
                 if (stepDetPrefersDouble || ((asymmetricPosition || rms > 2.2f) && hasStepHarmonic)) {
@@ -295,9 +295,9 @@ class CadenceEstimator(
         val fractionalLag = parabolicInterpolateLag(r, chosenLag)
         var rawSpm = ((60f * effectiveFs) / fractionalLag).coerceIn(config.minCadenceSpm, config.maxCadenceSpm)
 
-        // Guardia anti-dimezzamento (Fase 1B): in HAND/POCKET evita crolli improvvisi sulla sub-armonica
-        // (es. ~68 BPM di falcata rispetto a ~110-136 SPM reali durante rallentamenti o curve)
-        val isAsymmetric = (position == PhonePosition.HAND || position == PhonePosition.POCKET)
+        // Guardia anti-dimezzamento (Fase 1B / A10): in HAND/POCKET/WRIST evita crolli improvvisi sulla sub-armonica
+        // (es. ~68 BPM di oscillazione del braccio/falcata rispetto a ~110-136 SPM reali)
+        val isAsymmetric = (position == PhonePosition.HAND || position == PhonePosition.POCKET || position == PhonePosition.WRIST)
         if (isAsymmetric && heldCadenceSpm >= 90f && rawSpm < heldCadenceSpm * 0.62f) {
             val doubled = rawSpm * 2f
             if (doubled <= config.maxCadenceSpm &&
