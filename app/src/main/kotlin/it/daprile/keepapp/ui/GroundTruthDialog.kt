@@ -94,6 +94,7 @@ fun GroundTruthDialog(
                 Text("Posizione del telefono", fontWeight = FontWeight.SemiBold)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(
+                        "wrist" to "Polso",
                         "arm" to "Braccio",
                         "hand" to "Mano",
                         "waist" to "Vita",

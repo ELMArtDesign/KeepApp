@@ -204,7 +204,7 @@ object SessionReplayEngine {
 
         val csvRows = ArrayList<ReplayCsvRow>(records.size / 40 + 16)
         val validCadences = ArrayList<Float>()
-        val positionCounts = IntArray(4)
+        val positionCounts = IntArray(PhonePosition.entries.size)
         var positionChanges = 0
         var lastPos: PhonePosition? = null
 
@@ -443,7 +443,7 @@ object SessionReplayEngine {
         }
         var domPosIdx = manifest.position.index
         var maxPosCount = -1
-        for (i in 0..3) {
+        for (i in positionCounts.indices) {
             if (positionCounts[i] > maxPosCount) {
                 maxPosCount = positionCounts[i]
                 domPosIdx = i

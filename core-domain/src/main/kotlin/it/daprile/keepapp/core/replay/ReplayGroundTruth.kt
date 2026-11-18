@@ -125,6 +125,7 @@ object ReplayConfigAndTruthLoader {
             phaseOffsetHandMs = flt("phaseOffsetHandMs", base.phaseOffsetHandMs),
             phaseOffsetWaistMs = flt("phaseOffsetWaistMs", base.phaseOffsetWaistMs),
             phaseOffsetPocketMs = flt("phaseOffsetPocketMs", base.phaseOffsetPocketMs),
+            phaseOffsetWristMs = flt("phaseOffsetWristMs", base.phaseOffsetWristMs),
             anchorLockStableSeconds = flt("anchorLockStableSeconds", base.anchorLockStableSeconds),
             anchorLockMaxStdSpm = flt("anchorLockMaxStdSpm", base.anchorLockMaxStdSpm),
             anchorDropThresholdFraction = flt("anchorDropThresholdFraction", base.anchorDropThresholdFraction),

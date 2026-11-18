@@ -48,14 +48,14 @@ class PositionClassifier(
     private var currentPosition: PhonePosition = initialPositionHint
     private var currentConfidence: Float = 0.5f
 
-    private val smoothedScores = FloatArray(4) { idx ->
-        if (idx == initialPositionHint.index) 0.55f else 0.15f
+    private val smoothedScores = FloatArray(PhonePosition.entries.size) { idx ->
+        if (idx == initialPositionHint.index) 0.55f else 0.12f
     }
 
     fun setInitialHint(hint: PhonePosition) {
         currentPosition = hint
-        for (i in 0..3) {
-            smoothedScores[i] = if (i == hint.index) 0.55f else 0.15f
+        for (i in smoothedScores.indices) {
+            smoothedScores[i] = if (i == hint.index) 0.55f else 0.12f
         }
     }
 
@@ -155,7 +155,7 @@ class PositionClassifier(
             )
         }
 
-        val rawScores = FloatArray(4)
+        val rawScores = FloatArray(PhonePosition.entries.size)
 
         // 1. WAIST (Vita): rotazione del bacino molto contenuta rispetto agli arti
         rawScores[PhonePosition.WAIST.index] = when {
@@ -185,11 +185,18 @@ class PositionClassifier(
             else -> 0.15f
         }
 
+        // 5. WRIST (Polso): ampia oscillazione pendolare dell'avambraccio e assetto misto
+        rawScores[PhonePosition.WRIST.index] = when {
+            gyroTotalVar >= config.pocketMinPitchGyroVarianceRad2 * 0.70f && gy < 0.55f -> 0.75f
+            gyroTotalVar > config.waistMaxGyroVarianceRad2 && horizontalRatio >= 0.45f -> 0.45f
+            else -> 0.12f
+        }
+
         val sumRaw = rawScores.sum().coerceAtLeast(0.01f)
         val alpha = 0.65f
         var bestIdx = currentPosition.index
         var bestScore = -1f
-        for (i in 0..3) {
+        for (i in rawScores.indices) {
             val norm = rawScores[i] / sumRaw
             smoothedScores[i] = (1f - alpha) * smoothedScores[i] + alpha * norm
             if (smoothedScores[i] > bestScore) {

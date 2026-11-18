@@ -86,6 +86,7 @@ data class KeepAppConfig(
     val phaseOffsetHandMs: Float = 22.0f,   // da tarare
     val phaseOffsetWaistMs: Float = 8.0f,   // da tarare
     val phaseOffsetPocketMs: Float = 12.0f, // da tarare
+    val phaseOffsetWristMs: Float = 24.0f,  // da tarare
 
     // =========================================================================
     // 4. ANCORA ELASTICA (ElasticAnchor — D40) [DA TARARE]
@@ -146,5 +147,6 @@ data class KeepAppConfig(
         PhonePosition.HAND -> phaseOffsetHandMs
         PhonePosition.WAIST -> phaseOffsetWaistMs
         PhonePosition.POCKET -> phaseOffsetPocketMs
+        PhonePosition.WRIST -> phaseOffsetWristMs
     }
 }

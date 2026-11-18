@@ -17,7 +17,8 @@ enum class PhonePosition(val code: String, val labelIt: String, val index: Int) 
     ARM("arm", "Braccio (Fascia)", 0),
     HAND("hand", "Mano", 1),
     WAIST("waist", "Vita (Marsupio)", 2),
-    POCKET("pocket", "Tasca", 3);
+    POCKET("pocket", "Tasca", 3),
+    WRIST("wrist", "Polso", 4);
 
     companion object {
         fun fromCode(code: String?): PhonePosition =

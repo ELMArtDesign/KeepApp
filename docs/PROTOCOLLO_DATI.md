@@ -95,12 +95,12 @@ Per le uscite di taratura **T1** e **T3** si usa direttamente **KeepApp (`it.dap
    - **4° tocco cuffia** → **Fine conteggio**.
    *(Se registri solo **2 marker**, l'app imposterà `interval = "markers"` senza soste; con **4 marker** imposterà automaticamente sia `interval = "markers"` sia `real_stops = [[t2, t3]]`.)*
 3. Premi **`FERMA SESSIONE LIVE`**: si apre automaticamente la schermata **`Dati di riferimento`**:
-   - Inserisci **Passi contati** (es. `200`), **Posizione** (`Braccio` / `Mano` / `Vita` / `Tasca`), **Attività** (`Camminata` / `Corsa`), **Ambiente** (`Aperto` / `Chiuso`) ed eventuali **Note**.
+   - Inserisci **Passi contati** (es. `200`), **Posizione** (`Polso` / `Braccio` / `Mano` / `Vita` / `Tasca`), **Attività** (`Camminata` / `Corsa`), **Ambiente** (`Aperto` / `Chiuso`) ed eventuali **Note**.
    - Premi **`Salva ground_truth.json`**: l'app salva il file direttamente nella cartella della sessione accanto a `sensors.bin` e `manifest.json`.
 
-### Matrice Uscite T1 (8 + 8 micro-sessioni da 3–5 minuti)
-- **Gruppo TARATURA (Giorno 1):** 8 sessioni `{Braccio, Mano, Vita, Tasca} × {Camminata, Corsa}`, ciascuna con 1 sosta reale di ~10 s.
-- **Gruppo VERIFICA (Altro giorno o percorso):** le stesse 8 sessioni ripetute in condizioni indipendenti (usate solo per validazione finale in `ReplayRegressionTest`, mai per tarare i parametri).
+### Matrice Uscite T1 (10 + 10 micro-sessioni da 3–5 minuti)
+- **Gruppo TARATURA (Giorno 1):** 10 sessioni `{Polso, Braccio, Mano, Vita, Tasca} × {Camminata, Corsa}`, ciascuna con 1 sosta reale di ~10 s.
+- **Gruppo VERIFICA (Altro giorno o percorso):** le stesse 10 sessioni ripetute in condizioni indipendenti (usate solo per validazione finale in `ReplayRegressionTest`, mai per tarare i parametri).
 2. *(Per non riempire inutilmente lo spazio con 60 minuti di file WAV da 350 MB, puoi lasciare `3. Registra Microfono = OFF` oppure tenerlo `ON` se hai almeno 1 GB libero).*
 3. Premi **`▶ AVVIA SESSIONE DI REGISTRAZIONE`**, **spegni subito lo schermo** e fai la tua sessione di **60 minuti**.
 4. Al termine premi **`⏹ FERMA E SALVA SESSIONE`**.
