@@ -410,7 +410,7 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
             deviceSnapshot = DeviceInfoCollector.collectDeviceSnapshot(this),
             monotonicStartNs = startBootNs,
             unixStartMs = nowMs,
-            appId = "it.daprile.keepapp",
+            appId = "it.daprile.moventure",
             milestoneTag = "Phase1A",
             btLatencyMs = appliedBtLatencyMs
         ).also { it.start() }

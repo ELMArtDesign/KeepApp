@@ -6,6 +6,6 @@ In seguito alla rinomina visibile dell'applicazione in **Moventure** (nome visib
 - **Nomi di classi principali:** `KeepAppConfig`, `KeepAppAudioEngine`, `KeepAppSessionService`, `KeepAppMainScreen`, `KeepAppUiStateHolder`
 - **Nomi di thread interni, channel ID e SharedPreferences:** `"KeepApp-AudioEngine"`, `"KeepApp-Sensors"`, `"KeepApp-FileWriter"`, `"keepapp_live_session"`, `"keepapp_bt_latency_profiles"`, `"keepapp_session_history"`
 - **Header binario `sensors.bin` (retrocompatibilità D45):** magic ASCII `"KEEPAPP0"` (invariato per compatibilità con tutte le sessioni registrate in Fase 0 e 1A).
-- **`applicationId`:** `it.daprile.keepapp` / `it.daprile.keepapp.logger` *(valutato separatamente al punto 3 prima di qualsiasi pubblicazione)*.
+- **`applicationId` (già migrato):** `it.daprile.moventure` (app principale) e `it.daprile.moventure.logger` (Logger).
 
 Questi nomi interni saranno valutati per eventuale refactoring dopo la chiusura della Fase 1A / 1B.

@@ -18,7 +18,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "it.daprile.keepapp.logger"
+        applicationId = "it.daprile.moventure.logger"
         minSdk = 26
         targetSdk = 36
         versionCode = 2

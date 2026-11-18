@@ -18,7 +18,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "it.daprile.keepapp"
+        applicationId = "it.daprile.moventure"
         minSdk = 26
         // targetSdk = 36 (Android 16), requisito Google Play a novembre 2026
         targetSdk = 36

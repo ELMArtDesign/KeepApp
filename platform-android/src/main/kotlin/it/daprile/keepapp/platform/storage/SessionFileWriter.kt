@@ -37,7 +37,7 @@ class SessionFileWriter(
     private val deviceSnapshot: DeviceSnapshot,
     private val monotonicStartNs: Long,
     private val unixStartMs: Long,
-    private val appId: String = "it.daprile.keepapp.logger",
+    private val appId: String = "it.daprile.moventure.logger",
     private val milestoneTag: String = "Phase1A-M0",
     private val btLatencyMs: Float? = null
 ) {
