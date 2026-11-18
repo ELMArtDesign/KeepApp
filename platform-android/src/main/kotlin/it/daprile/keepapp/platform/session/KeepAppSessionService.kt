@@ -630,6 +630,17 @@ class KeepAppSessionService : Service(), SensorEventListener, LocationListener {
                 f1 = relSec
             )
         )
+        val beepCount = idx.coerceIn(1, 4)
+        audioEngine?.playMarkerConfirmationBeeps(beepCount)
+        fileWriter?.enqueue(
+            BinaryRecord.ofFloats(
+                timestampNs = nowNs,
+                recordType = BinaryFormat.TYPE_AUDIO_SYNC,
+                f0 = beepCount.toFloat(),
+                f1 = relSec,
+                f2 = 1760f
+            )
+        )
         _liveState.value = _liveState.value.copy(markerRelTimesSec = sessionMarkerRelTimesSec.toList())
         val label = when (idx) {
             1 -> "1/4 Inizio conteggio"

@@ -26,10 +26,14 @@ import it.daprile.keepapp.core.rhythm.RhythmPatternEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
 import kotlin.math.tanh
 
 /**
@@ -90,12 +94,17 @@ class KeepAppAudioEngine(
     val scheduler = BeatScheduler(sampleRateHz, config, patternEngine)
 
     private val wavetables = DrumSynthWavetable.buildDefaultBank(sampleRateHz)
+    private val markerBeepWavetable = buildMarkerBeepWavetable(sampleRateHz)
 
     // Preallocazione fissa per il thread audio
     private val mixBuffer = FloatArray(CHUNK_FRAMES)
     private val pcmBuffer = ShortArray(CHUNK_FRAMES)
     private val voices = Array(MAX_VOICES) { VoiceSlot() }
     private val audioTimestamp = AudioTimestamp()
+
+    private val pendingMarkerBeeps = AtomicInteger(0)
+    private var markerBeepReadPos: Int = -1
+    private var markerBeepGapSamples: Int = 0
 
     private val _telemetry = MutableStateFlow(
         AudioEngineTelemetry(
@@ -184,6 +193,14 @@ class KeepAppAudioEngine(
 
     fun setAttenuated(isAttenuated: Boolean) {
         attenuated = isAttenuated
+    }
+
+    /**
+     * Accoda `count` (1..4) brevi beep di conferma marker T1 nello stesso flusso `AudioTrack`
+     * senza allocazioni sul thread audio.
+     */
+    fun playMarkerConfirmationBeeps(count: Int) {
+        pendingMarkerBeeps.set(count.coerceIn(1, 4))
     }
 
     fun updateSyncTargets(
@@ -307,7 +324,12 @@ class KeepAppAudioEngine(
                     }
                 }
 
-                // 4. Rampa volume/mute liscia sample-by-sample + soft clipping + conversione PCM16
+                // 4. Rampa volume/mute liscia sample-by-sample + mix beep marker + soft clipping + PCM16
+                if (markerBeepReadPos < 0 && markerBeepGapSamples <= 0 && pendingMarkerBeeps.get() > 0) {
+                    pendingMarkerBeeps.decrementAndGet()
+                    markerBeepReadPos = 0
+                }
+                val beepGain = (userVolume.coerceIn(0.3f, 1f)) * 0.30f
                 val targetGain = computeTargetGain()
                 for (i in 0 until CHUNK_FRAMES) {
                     val diff = targetGain - currentGain
@@ -319,7 +341,23 @@ class KeepAppAudioEngine(
                         currentGain -= maxGainStepPerSample
                     }
 
-                    val scaled = mixBuffer[i] * currentGain
+                    var beepSample = 0f
+                    if (markerBeepReadPos >= 0) {
+                        beepSample = markerBeepWavetable[markerBeepReadPos] * beepGain
+                        markerBeepReadPos++
+                        if (markerBeepReadPos >= markerBeepWavetable.size) {
+                            markerBeepReadPos = -1
+                            markerBeepGapSamples = (sampleRateHz * 0.090).toInt()
+                        }
+                    } else if (markerBeepGapSamples > 0) {
+                        markerBeepGapSamples--
+                        if (markerBeepGapSamples == 0 && pendingMarkerBeeps.get() > 0) {
+                            pendingMarkerBeeps.decrementAndGet()
+                            markerBeepReadPos = 0
+                        }
+                    }
+
+                    val scaled = mixBuffer[i] * currentGain + beepSample
                     val limited = if (abs(scaled) > 0.85f) {
                         tanh(scaled.toDouble()).toFloat()
                     } else {
@@ -406,5 +444,18 @@ class KeepAppAudioEngine(
             pllSlopePpm = clockEstimator.estimatedSlopePpm,
             lastPhaseCorrectionUs = lastPhaseCorrectionUs
         )
+    }
+
+    private fun buildMarkerBeepWavetable(sr: Int): FloatArray {
+        val len = (sr * 0.055).toInt() // 55 ms tono breve a 1760 Hz
+        val fadeSamples = (sr * 0.005).toInt().coerceAtLeast(1)
+        return FloatArray(len) { i ->
+            val env = when {
+                i < fadeSamples -> 0.5f * (1f - cos(PI * i / fadeSamples).toFloat())
+                i >= len - fadeSamples -> 0.5f * (1f - cos(PI * (len - 1 - i) / fadeSamples).toFloat())
+                else -> 1f
+            }
+            sin(2.0 * PI * 1760.0 * i / sr).toFloat() * env
+        }
     }
 }
